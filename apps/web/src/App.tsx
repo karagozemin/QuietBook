@@ -1,13 +1,16 @@
 import {
   Activity,
+  ArrowLeft,
+  ArrowRight,
   ArrowUpRight,
   BadgeCheck,
   Ban,
   BookOpen,
-  Braces,
+  BriefcaseBusiness,
   Check,
   ChevronRight,
   CircleDollarSign,
+  CircleUserRound,
   Clock3,
   Copy,
   Database,
@@ -15,24 +18,32 @@ import {
   EyeOff,
   FileCheck2,
   Fingerprint,
+  Gauge,
   KeyRound,
   Landmark,
+  Layers3,
+  LayoutDashboard,
   Link2,
   LockKeyhole,
+  LogOut,
+  Menu,
   Network,
-  PanelRightOpen,
+  PanelRight,
   Play,
+  Radio,
+  ReceiptText,
   RefreshCw,
   Scale,
+  ScanEye,
   ShieldCheck,
-  Square,
   Users,
   Wallet,
   X,
+  Zap,
 } from "lucide-react";
-import QRCode from "qrcode";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { MarketCanvas } from "./MarketCanvas";
 import {
   compact,
   explorerContract,
@@ -43,483 +54,754 @@ import {
 import type { LiveSnapshot } from "./live";
 import type { WalletSession } from "./wallet";
 
-type Page = "round" | "evidence" | "contracts";
-type Role = "public" | "issuer" | "investor" | "auditor";
-type LiveState =
-  | { status: "checking" }
-  | { status: "verified" | "mismatch"; snapshot: LiveSnapshot }
-  | { status: "fallback"; error: string };
+type AppMode = "landing" | "intro" | "console";
+type Workspace = "overview" | "issuances" | "portfolio" | "audit" | "evidence";
+type Perspective = "public" | "issuer" | "investor" | "auditor";
 type WalletState =
   | { status: "disconnected" }
   | { status: "connecting" }
   | { status: "connected"; session: WalletSession; roundStatus: string }
   | { status: "error"; message: string };
-
-type DemoStep = {
-  label: string;
-  detail: string;
-  icon: typeof Eye;
-  negative?: boolean;
+type LiveState =
+  | { status: "checking" }
+  | { status: "verified" | "mismatch"; snapshot: LiveSnapshot }
+  | { status: "fallback"; error: string };
+type AsyncState =
+  | { status: "idle" }
+  | { status: "loading"; label: string }
+  | { status: "success"; label: string; hash?: string }
+  | { status: "error"; label: string; code: string };
+type DemoState = {
+  open: boolean;
+  running: boolean;
+  active: number;
+  verified: number[];
+  error?: string;
 };
 
-const demoSteps: readonly DemoStep[] = [
-  { label: "RWA lot escrowed", detail: "Fixed QBNOTE lot funded", icon: Landmark },
-  { label: "Controller registered", detail: "Round-bound confidential account", icon: KeyRound },
-  { label: "Three bids sealed", detail: "Values remain confidential", icon: LockKeyhole },
-  { label: "Policy denial recorded", detail: "Unauthorized account rejected", icon: Ban, negative: true },
-  { label: "Participant set frozen", detail: "Ordered set hash committed", icon: Users },
-  { label: "Winner proven", detail: "Max-Bid statement matched", icon: Fingerprint },
-  { label: "Settlement executed", detail: "Payment and RWA delivery atomic", icon: Scale },
-  { label: "Evidence indexed", detail: "Testnet receipts available", icon: FileCheck2 },
+type IconType = typeof Eye;
+
+const introSlides: Array<{
+  kicker: string;
+  title: string;
+  copy: string;
+  phase: "bidding" | "proof" | "settlement";
+  stat: string;
+  label: string;
+}> = [
+  {
+    kicker: "01 / PRIVATE PRICE DISCOVERY",
+    title: "The market sees participation. Not the demand curve.",
+    copy: "Verified investors compete for one fixed issuance lot while bid values stay inside confidential commitments.",
+    phase: "bidding",
+    stat: "3",
+    label: "sealed bid receipts",
+  },
+  {
+    kicker: "02 / VERIFIABLE ALLOCATION",
+    title: "The winner is proven against the complete book.",
+    copy: "One UltraHonk statement binds bidder order, live delegations, reserve and the exact settlement payment.",
+    phase: "proof",
+    stat: "14,592 B",
+    label: "maximum-bid proof",
+  },
+  {
+    kicker: "03 / ATOMIC DELIVERY",
+    title: "Confidential payment. Public delivery. One invocation.",
+    copy: "The winning payment and escrowed RWA lot move together, with auditor and disclosure evidence attached.",
+    phase: "settlement",
+    stat: "1 tx",
+    label: "atomic settlement",
+  },
 ];
 
-const roles: Array<{ id: Role; label: string; icon: typeof Eye }> = [
+const workspaceItems: Array<{ id: Workspace; label: string; icon: IconType }> = [
+  { id: "overview", label: "Overview", icon: LayoutDashboard },
+  { id: "issuances", label: "Issuances", icon: BriefcaseBusiness },
+  { id: "portfolio", label: "My access", icon: CircleUserRound },
+  { id: "audit", label: "Audit & disclosure", icon: ScanEye },
+  { id: "evidence", label: "Evidence", icon: Database },
+];
+
+const perspectives: Array<{ id: Perspective; label: string; icon: IconType }> = [
   { id: "public", label: "Public", icon: Eye },
   { id: "issuer", label: "Issuer", icon: Landmark },
   { id: "investor", label: "Investor", icon: Users },
   { id: "auditor", label: "Auditor", icon: ShieldCheck },
 ];
 
-const contracts = [
-  ["Market", testnetEvidence.deployment.contracts.market],
-  ["Round controller", { contractId: testnetEvidence.controller.controller }],
-  ["Confidential token", testnetEvidence.deployment.contracts.confidentialToken],
-  ["Max-Bid verifier", testnetEvidence.deployment.contracts.maxBidVerifier],
-  ["Eligibility policy", testnetEvidence.deployment.contracts.eligibilityPolicy],
-  ["RWA token", testnetEvidence.deployment.contracts.rwaToken],
-  ["Confidential verifier", testnetEvidence.deployment.contracts.confidentialVerifier],
-  ["Auditor registry", testnetEvidence.deployment.contracts.confidentialAuditor],
-  ["Lifecycle market", { contractId: testnetEvidence.withdrawal.market }],
-  ["Lifecycle controller", { contractId: testnetEvidence.withdrawal.controller }],
-] as const;
-
-function IconButton({
-  label,
-  children,
-  onClick,
-}: {
+const demoSteps: Array<{
   label: string;
+  detail: string;
+  icon: IconType;
+  receipt?: string;
+  negative?: boolean;
+}> = [
+  {
+    label: "Lot escrowed",
+    detail: "Fixed QBNOTE lot funded before opening",
+    icon: Landmark,
+    receipt: testnetEvidence.setup.roundTransactions.fundRound,
+  },
+  {
+    label: "Book opened",
+    detail: "Terms locked and controller bound",
+    icon: BookOpen,
+    receipt: testnetEvidence.setup.roundTransactions.openRound,
+  },
+  {
+    label: "Three bids sealed",
+    detail: "Round-scoped delegations registered",
+    icon: LockKeyhole,
+    receipt: testnetEvidence.setup.bidderTransactions[0]?.registerBid,
+  },
+  {
+    label: "Policy denial",
+    detail: "Unknown investor rejected on-chain",
+    icon: Ban,
+    negative: true,
+  },
+  {
+    label: "Book frozen",
+    detail: "Complete participant set committed",
+    icon: Layers3,
+    receipt: testnetEvidence.settlement.closeTransaction,
+  },
+  {
+    label: "Winner proven",
+    detail: "Maximum-bid statement matched",
+    icon: Fingerprint,
+    receipt: testnetEvidence.settlement.finalizeTransaction,
+  },
+  {
+    label: "Settled atomically",
+    detail: "Payment and RWA delivery confirmed",
+    icon: Scale,
+    receipt: testnetEvidence.settlement.finalizeTransaction,
+  },
+  {
+    label: "Disclosure verified",
+    detail: "Recipient and event binding matched",
+    icon: FileCheck2,
+  },
+];
+
+function delay(milliseconds: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+function walletRole(wallet: WalletState) {
+  if (wallet.status !== "connected") return "Guest";
+  const address = wallet.session.address;
+  if (address === testnetEvidence.deployment.roles.issuer) return "Issuer";
+  if (address === testnetEvidence.deployment.roles.auditor) return "Auditor";
+  if (participants.some((participant) => participant.account === address)) return "Investor";
+  return "Observer";
+}
+
+function Pressable({
+  children,
+  className = "",
+  onClick,
+  disabled,
+  type = "button",
+}: {
   children: ReactNode;
+  className?: string;
   onClick?: () => void;
+  disabled?: boolean;
+  type?: "button" | "submit";
 }) {
+  return <button type={type} className={`pressable ${className}`} onClick={onClick} disabled={disabled}>{children}</button>;
+}
+
+function WalletButton({ wallet, onConnect, onDisconnect }: {
+  wallet: WalletState;
+  onConnect: () => void;
+  onDisconnect: () => void;
+}) {
+  const connected = wallet.status === "connected";
   return (
-    <button className="icon-button" type="button" aria-label={label} title={label} onClick={onClick}>
-      {children}
-    </button>
+    <Pressable
+      className={`wallet-button ${connected ? "connected" : ""}`}
+      onClick={connected ? onDisconnect : onConnect}
+      disabled={wallet.status === "connecting"}
+    >
+      {connected ? <LogOut size={15}/> : <Wallet size={15}/>}
+      <span>{connected ? compact(wallet.session.address, 5, 4) : wallet.status === "connecting" ? "Connecting" : "Connect wallet"}</span>
+    </Pressable>
   );
 }
 
-function StatusMark({ kind = "ok" }: { kind?: "ok" | "denied" | "hidden" }) {
-  if (kind === "denied") return <Ban size={15} aria-hidden="true" />;
-  if (kind === "hidden") return <EyeOff size={15} aria-hidden="true" />;
-  return <Check size={15} aria-hidden="true" />;
+function Brand({ compactBrand = false }: { compactBrand?: boolean }) {
+  return (
+    <div className={`brand ${compactBrand ? "compact" : ""}`}>
+      <span className="brand-symbol"><BookOpen size={19}/></span>
+      <span><strong>QuietBook</strong>{!compactBrand && <small>Primary issuance</small>}</span>
+    </div>
+  );
 }
 
-function AppHeader({ page, setPage }: { page: Page; setPage: (page: Page) => void }) {
+function PublicHeader({ wallet, onConnect, onDisconnect, onOpenConsole }: {
+  wallet: WalletState;
+  onConnect: () => void;
+  onDisconnect: () => void;
+  onOpenConsole: () => void;
+}) {
   return (
-    <header className="app-header">
-      <div className="brand-lockup">
-        <div className="brand-mark" aria-hidden="true"><BookOpen size={20} /></div>
-        <div>
-          <strong>QuietBook</strong>
-          <span>Issuance console</span>
-        </div>
-      </div>
-      <nav className="main-nav" aria-label="Primary navigation">
-        {(["round", "evidence", "contracts"] as Page[]).map((item) => (
-          <button
-            type="button"
-            key={item}
-            className={page === item ? "active" : ""}
-            onClick={() => setPage(item)}
-          >
-            {item === "round" ? "Live round" : item[0]!.toUpperCase() + item.slice(1)}
-          </button>
-        ))}
-      </nav>
-      <div className="network-state">
-        <span className="network-dot" />
-        Stellar Testnet
+    <header className="public-header">
+      <Brand/>
+      <div className="public-header-actions">
+        <span className="testnet-badge"><Radio size={13}/> Stellar Testnet</span>
+        <Pressable className="header-console-link" onClick={onOpenConsole}>Console <ArrowRight size={14}/></Pressable>
+        <WalletButton wallet={wallet} onConnect={onConnect} onDisconnect={onDisconnect}/>
       </div>
     </header>
   );
 }
 
-function LiveVerificationBar({ state, refresh }: { state: LiveState; refresh: () => void }) {
-  const verified = state.status === "verified";
-  const mismatch = state.status === "mismatch";
-  const title = state.status === "checking"
-    ? "Checking Testnet"
-    : verified
-      ? state.snapshot.indexer === "verified" ? "Indexer + RPC verified" : "Live RPC verified"
-      : mismatch
-        ? "Live mismatch detected"
-        : "Evidence fallback active";
-  const detail = state.status === "checking"
-    ? "Reading market, controller and settlement state"
-    : state.status === "fallback"
-      ? "Public RPC unavailable · verified replay remains available"
-      : `${state.snapshot.matchedCount}/${state.snapshot.checks.length} checks matched · ${state.snapshot.indexer === "verified" ? "durable event cache · " : "direct RPC · "}ledger ${state.snapshot.latestLedger.toLocaleString()}`;
-
+function LivePill({ live }: { live: LiveState }) {
+  const verified = live.status === "verified";
   return (
-    <div className={`live-verification ${state.status}`} role="status" title={state.status === "fallback" ? state.error : undefined}>
-      <div className="live-verification-inner">
-        <div className="live-verification-copy">
-          <span className="live-icon" aria-hidden="true">
-            {state.status === "checking" ? <Activity size={15}/> : verified ? <BadgeCheck size={15}/> : <Clock3 size={15}/>}
-          </span>
-          <div><strong>{title}</strong><span>{detail}</span></div>
-        </div>
-        {state.status !== "checking" && (
-          <button type="button" className="live-refresh" onClick={refresh} aria-label="Refresh live verification" title="Refresh live verification">
-            <RefreshCw size={15}/>
-          </button>
-        )}
-      </div>
-    </div>
+    <span className={`live-pill ${live.status}`}>
+      {live.status === "checking" ? <Activity size={13}/> : verified ? <BadgeCheck size={13}/> : <Clock3 size={13}/>}
+      {live.status === "checking" ? "Reading Testnet" : verified ? `Ledger ${live.snapshot.latestLedger.toLocaleString()}` : live.status === "mismatch" ? "State mismatch" : "Evidence fallback"}
+    </span>
   );
 }
 
-function RoundHeader({ onEvidence }: { onEvidence: () => void }) {
-  return (
-    <section className="round-heading">
-      <div>
-        <div className="eyebrow-row">
-          <span className="role-banner">PUBLIC ROUND</span>
-          <span className="status settled"><BadgeCheck size={14} /> Settled</span>
-        </div>
-        <h1>QBNOTE-26 <span>Demo issuance</span></h1>
-        <p>Known investors. Private bids. Verifiable allocation.</p>
-      </div>
-      <div className="round-actions">
-        <button className="secondary-button" type="button" onClick={onEvidence}>
-          <PanelRightOpen size={17} /> Evidence
-        </button>
-        <a
-          className="primary-button"
-          href={testnetEvidence.settlement.explorer}
-          target="_blank"
-          rel="noreferrer"
-        >
-          Final transaction <ArrowUpRight size={17} />
-        </a>
-      </div>
-    </section>
-  );
-}
-
-function Metrics() {
-  const metrics = [
-    { label: "Public RWA lot", value: "1.0000000 QBNOTE", note: "Escrow delivered", icon: Landmark },
-    { label: "Public reserve", value: "8.0000000 XLM", note: "Threshold met", icon: CircleDollarSign },
-    { label: "Verified bidders", value: "3", note: "1 policy denial", icon: Users },
-    { label: "Proof statement", value: "448 bytes", note: "Byte match", icon: Braces },
-  ];
-  return (
-    <div className="metrics-grid">
-      {metrics.map(({ label, value, note, icon: MetricIcon }) => (
-        <div className="metric" key={label}>
-          <div className="metric-label"><MetricIcon size={16} /> {label}</div>
-          <strong>{value}</strong>
-          <span>{note}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function JudgeReplay({ stage, running, onRun, onStop }: {
-  stage: number;
-  running: boolean;
-  onRun: () => void;
-  onStop: () => void;
-}) {
-  const activeLabel = stage === demoSteps.length ? "Verified run complete" : demoSteps[stage]?.label;
-  return (
-    <section className="workflow-band">
-      <div className="workflow-toolbar">
-        <div>
-          <div className="section-kicker">JUDGE FLOW · TESTNET EVIDENCE REPLAY</div>
-          <h2>{activeLabel}</h2>
-        </div>
-        <button className="replay-button" type="button" onClick={running ? onStop : onRun}>
-          {running ? <Square size={16} /> : <Play size={16} />}
-          {running ? "Stop replay" : stage === demoSteps.length ? "Replay verified run" : "Resume replay"}
-        </button>
-      </div>
-      <div className="step-track" role="list" aria-label="Verified round steps">
-        {demoSteps.map((step, index) => {
-          const complete = index < stage || stage === demoSteps.length;
-          const active = running && index === stage;
-          const StepIcon = step.icon;
-          return (
-            <div className={`flow-step ${complete ? "complete" : ""} ${active ? "active" : ""}`} key={step.label} role="listitem">
-              <div className={`step-node ${step.negative ? "negative" : ""}`}>
-                {complete ? <Check size={16} /> : <StepIcon size={16} />}
-              </div>
-              <div>
-                <strong>{step.label}</strong>
-                <span>{step.detail}</span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-function ParticipantsTable() {
-  return (
-    <section className="data-section participants-section">
-      <div className="section-heading">
-        <div>
-          <div className="section-kicker">ORDERED PARTICIPANT SET</div>
-          <h2>Registered investors</h2>
-        </div>
-        <span className="hash-chip" title={testnetEvidence.settlement.roundId}>
-          <Fingerprint size={14} /> {compact(testnetEvidence.settlement.roundId, 8, 6)}
-        </span>
-      </div>
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr><th>Index</th><th>Investor</th><th>Bid receipt</th><th>Result</th><th>Evidence</th></tr>
-          </thead>
-          <tbody>
-            {participants.map((participant) => (
-              <tr key={participant.account}>
-                <td className="index-cell">{String(participant.registrationIndex).padStart(2, "0")}</td>
-                <td>
-                  <div className="identity-cell"><span className="identity-avatar">{participant.registrationIndex + 1}</span><div><strong>{participant.alias}</strong><span>{compact(participant.account)}</span></div></div>
-                </td>
-                <td><span className="sealed-state"><LockKeyhole size={14} /> Bid sealed</span></td>
-                <td>{participant.winner ? <span className="winner-state"><BadgeCheck size={14} /> Winner</span> : participant.reclaimTransaction ? <span className="winner-state"><Check size={14} /> Reclaimed</span> : <span className="muted-state">Not allocated</span>}</td>
-                <td><a className="table-link" href={explorerTransaction(participant.registrationTransaction)} target="_blank" rel="noreferrer" aria-label={`Open ${participant.alias} registration transaction`}><ArrowUpRight size={16} /></a></td>
-              </tr>
-            ))}
-            <tr className="denied-row">
-              <td className="index-cell">—</td>
-              <td><div className="identity-cell"><span className="identity-avatar denied">4</span><div><strong>Unapproved applicant</strong><span>{compact(testnetEvidence.setup.rejectedAccount)}</span></div></div></td>
-              <td><span className="denied-state"><Ban size={14} /> Policy denied</span></td>
-              <td><span className="muted-state">Not registered</span></td>
-              <td><span className="reason-code">4006</span></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
-function RolePanel({
-  role,
-  setRole,
+function Landing({
   wallet,
-  connectWallet,
-  disconnectWallet,
+  live,
+  onConnect,
+  onDisconnect,
+  onIntro,
+  onConsole,
 }: {
-  role: Role;
-  setRole: (role: Role) => void;
   wallet: WalletState;
-  connectWallet: () => void;
-  disconnectWallet: () => void;
+  live: LiveState;
+  onConnect: () => void;
+  onDisconnect: () => void;
+  onIntro: () => void;
+  onConsole: () => void;
 }) {
   return (
-    <section className="visibility-section">
-      <div className="section-heading compact-heading">
-        <div>
-          <div className="section-kicker">CONFIDENTIALITY, NOT ANONYMITY</div>
-          <h2>Role visibility</h2>
+    <div className="landing page-enter">
+      <PublicHeader wallet={wallet} onConnect={onConnect} onDisconnect={onDisconnect} onOpenConsole={onConsole}/>
+      <main>
+        <section className="landing-hero">
+          <MarketCanvas phase="bidding" className="hero-canvas"/>
+          <div className="hero-copy">
+            <div className="hero-kicker"><LivePill live={live}/><span>Confidential RWA issuance</span></div>
+            <h1>QuietBook</h1>
+            <p className="hero-tagline">Known investors. Private bids.<br/>Verifiable allocation.</p>
+            <p className="hero-support">A fixed tokenized asset lot, a controlled investor set and a winner proven without publishing the demand curve.</p>
+            <div className="hero-actions">
+              <Pressable className="button-primary button-large" onClick={onIntro}><Play size={17}/> Run Testnet story</Pressable>
+              <Pressable className="button-secondary button-large" onClick={onConsole}>Explore live round <ArrowRight size={17}/></Pressable>
+            </div>
+          </div>
+          <div className="hero-ledger" aria-label="Current issuance summary">
+            <span>LIVE ISSUANCE / QBNOTE-26</span>
+            <strong>Settled</strong>
+            <div><span>Verified investors</span><b>03</b></div>
+            <div><span>Public bid values</span><b>Hidden</b></div>
+            <div><span>Settlement</span><b>Atomic</b></div>
+          </div>
+        </section>
+        <section className="landing-proof-band" aria-label="QuietBook guarantees">
+          <div><LockKeyhole size={18}/><span><strong>Sealed institutional bids</strong><small>Commitments replace public amounts</small></span></div>
+          <div><ShieldCheck size={18}/><span><strong>Policy-gated participation</strong><small>Known accounts, explicit eligibility</small></span></div>
+          <div><Fingerprint size={18}/><span><strong>Auditable settlement</strong><small>Proof, receipts and controlled visibility</small></span></div>
+        </section>
+      </main>
+    </div>
+  );
+}
+
+function Intro({ step, onStep, onBack, onComplete }: {
+  step: number;
+  onStep: (step: number) => void;
+  onBack: () => void;
+  onComplete: () => void;
+}) {
+  const slide = introSlides[step]!;
+  return (
+    <div className="intro page-enter">
+      <header className="intro-header">
+        <Brand/>
+        <div className="intro-progress" aria-label={`Introduction step ${step + 1} of ${introSlides.length}`}>
+          {introSlides.map((item, index) => <span key={item.kicker} className={index <= step ? "complete" : ""}/>) }
         </div>
-        <div className="role-tabs" role="tablist" aria-label="Role view">
-          {roles.map(({ id, label, icon: RoleIcon }) => (
-            <button type="button" role="tab" aria-selected={role === id} className={role === id ? "active" : ""} key={id} onClick={() => setRole(id)}>
-              <RoleIcon size={15} /> {label}
+        <Pressable className="icon-pressable" onClick={onBack}><X size={19}/><span className="sr-only">Close introduction</span></Pressable>
+      </header>
+      <main className="intro-stage" key={slide.kicker}>
+        <MarketCanvas phase={slide.phase} className="intro-canvas"/>
+        <div className="intro-copy">
+          <span className="section-kicker">{slide.kicker}</span>
+          <h1>{slide.title}</h1>
+          <p>{slide.copy}</p>
+        </div>
+        <div className="intro-stat"><strong>{slide.stat}</strong><span>{slide.label}</span></div>
+        <div className="intro-controls">
+          <Pressable className="intro-back" onClick={() => onStep(Math.max(0, step - 1))} disabled={step === 0}><ArrowLeft size={16}/> Back</Pressable>
+          {step < introSlides.length - 1
+            ? <Pressable className="button-primary button-large" onClick={() => onStep(step + 1)}>Continue <ArrowRight size={17}/></Pressable>
+            : <Pressable className="button-primary button-large" onClick={onComplete}>Enter verified run <ArrowRight size={17}/></Pressable>}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function ConsoleHeader({
+  workspace,
+  wallet,
+  live,
+  onConnect,
+  onDisconnect,
+  onMenu,
+}: {
+  workspace: Workspace;
+  wallet: WalletState;
+  live: LiveState;
+  onConnect: () => void;
+  onDisconnect: () => void;
+  onMenu: () => void;
+}) {
+  return (
+    <header className="console-header">
+      <Pressable className="mobile-menu icon-pressable" onClick={onMenu}><Menu size={19}/><span className="sr-only">Open navigation</span></Pressable>
+      <div className="console-title"><span>Workspace</span><strong>{workspaceItems.find((item) => item.id === workspace)?.label}</strong></div>
+      <div className="console-header-actions"><LivePill live={live}/><WalletButton wallet={wallet} onConnect={onConnect} onDisconnect={onDisconnect}/></div>
+    </header>
+  );
+}
+
+function Sidebar({ workspace, open, onSelect, onClose }: {
+  workspace: Workspace;
+  open: boolean;
+  onSelect: (workspace: Workspace) => void;
+  onClose: () => void;
+}) {
+  return (
+    <>
+      <button className={`sidebar-scrim ${open ? "open" : ""}`} aria-label="Close navigation" onClick={onClose}/>
+      <aside className={`sidebar ${open ? "open" : ""}`}>
+        <Brand/>
+        <nav aria-label="Workspace navigation">
+          <span className="nav-label">WORKSPACE</span>
+          {workspaceItems.map(({ id, label, icon: Icon }) => (
+            <button key={id} type="button" className={workspace === id ? "active" : ""} onClick={() => { onSelect(id); onClose(); }}>
+              <Icon size={17}/><span>{label}</span>{workspace === id && <ChevronRight size={14}/>}
             </button>
           ))}
-        </div>
-      </div>
-      <div className="visibility-grid">
-        <div className="public-view">
-          <div className="panel-label"><Eye size={15} /> PUBLIC MARKET VIEW</div>
-          <div className="visibility-stat"><strong>3</strong><span>verified investors</span></div>
-          <ul className="visibility-list">
-            <li><span>Participant identities</span><StatusMark /></li>
-            <li><span>Bid receipt states</span><StatusMark /></li>
-            <li><span>Winner identity</span><StatusMark /></li>
-            <li><span>Bid and payment values</span><span className="hidden-value"><EyeOff size={14} /> Hidden</span></li>
-          </ul>
-        </div>
-        <div className="role-view">
-          {role === "public" && <PublicRole />}
-          {role === "issuer" && <IssuerRole wallet={wallet} connectWallet={connectWallet} disconnectWallet={disconnectWallet} />}
-          {role === "investor" && <InvestorRole wallet={wallet} connectWallet={connectWallet} disconnectWallet={disconnectWallet} />}
-          {role === "auditor" && <AuditorRole />}
-        </div>
-      </div>
-    </section>
+        </nav>
+        <div className="sidebar-network"><span><Radio size={13}/> TESTNET</span><strong>Unaudited prototype</strong><small>No mainnet or production value</small></div>
+      </aside>
+    </>
   );
 }
 
-function PublicRole() {
-  return <><div className="panel-label"><Network size={15} /> PUBLIC PROCESS STATE</div><div className="state-stack"><StateRow label="Participant set" value="Frozen · 3 accounts"/><StateRow label="Winner proof" value="Verified" good/><StateRow label="Settlement" value="Complete" good/><StateRow label="RWA delivery" value="1.0000000 QBNOTE" good/></div></>;
+function SectionHeading({ kicker, title, action }: { kicker: string; title: string; action?: ReactNode }) {
+  return <div className="section-heading"><div><span className="section-kicker">{kicker}</span><h2>{title}</h2></div>{action}</div>;
 }
 
-function IssuerRole({ wallet, connectWallet, disconnectWallet }: WalletPanelProps) {
-  const isIssuer = wallet.status === "connected" && wallet.session.address === testnetEvidence.deployment.roles.issuer;
-  return <><div className="panel-label"><Landmark size={15} /> ISSUER VIEW</div><div className="state-stack"><StateRow label="Round terms" value="Immutable" good/><StateRow label="Escrow" value="Delivered" good/><StateRow label="Payment receipt" value="Confidential" hidden/><StateRow label="Finalization" value={compact(testnetEvidence.settlement.finalizeTransaction)}/></div><WalletPanel wallet={wallet} connectWallet={connectWallet} disconnectWallet={disconnectWallet} roleMessage={isIssuer ? "Issuer account verified" : wallet.status === "connected" ? "Connected account is not this round's issuer" : "Connect the issuer account to manage a writable round"}/></>;
+function StatusTag({ children, tone = "green" }: { children: ReactNode; tone?: "green" | "coral" | "ink" | "muted" }) {
+  return <span className={`status-tag ${tone}`}>{children}</span>;
 }
 
-function InvestorRole({ wallet, connectWallet, disconnectWallet }: WalletPanelProps) {
-  const winner = participants.find((participant) => participant.winner)!;
-  const participant = wallet.status === "connected" ? participants.find((item) => item.account === wallet.session.address) : undefined;
-  const roleMessage = participant
-    ? `${participant.alias} · ${participant.winner ? "winning delegation consumed" : "losing delegation reclaimed"}`
-    : wallet.status === "connected"
-      ? "Connected account did not participate in this round"
-      : "Connect an investor account to load its private action state";
-  return <><div className="panel-label"><Users size={15} /> INVESTOR VIEW</div><div className="state-stack"><StateRow label="Selected account" value={participant?.alias ?? winner.alias}/><StateRow label="Delegation" value={participant ? participant.winner ? "Consumed at settlement" : "Reclaimed" : "Account-bound"} good={Boolean(participant)}/><StateRow label="Result" value={participant ? participant.winner ? "Won" : "Lost" : "Connect to resolve"} good={Boolean(participant)}/><StateRow label="Other bid values" value="Not visible" hidden/></div><WalletPanel wallet={wallet} connectWallet={connectWallet} disconnectWallet={disconnectWallet} roleMessage={roleMessage}/></>;
-}
-
-type WalletPanelProps = {
+function AccountAction({
+  wallet,
+  role,
+  eligibility,
+  onConnect,
+  onEligibility,
+  onRunDemo,
+}: {
   wallet: WalletState;
-  connectWallet: () => void;
-  disconnectWallet: () => void;
-};
-
-function WalletPanel({ wallet, connectWallet, disconnectWallet, roleMessage }: WalletPanelProps & { roleMessage: string }) {
+  role: string;
+  eligibility: AsyncState;
+  onConnect: () => void;
+  onEligibility: () => void;
+  onRunDemo: () => void;
+}) {
   const connected = wallet.status === "connected";
-  return <div className={`wallet-panel ${wallet.status}`}><div className="wallet-panel-head"><span><Wallet size={14}/> FREIGHTER · TESTNET</span>{connected ? <button type="button" onClick={disconnectWallet}>Disconnect</button> : <button type="button" onClick={connectWallet} disabled={wallet.status === "connecting"}>{wallet.status === "connecting" ? "Connecting..." : "Connect wallet"}</button>}</div>{connected && <div className="wallet-account"><strong>{compact(wallet.session.address, 10, 8)}</strong><span>{wallet.session.network} · round {wallet.roundStatus}</span></div>}<p className={wallet.status === "error" ? "wallet-error" : ""}>{wallet.status === "error" ? wallet.message : roleMessage}</p>{connected && wallet.roundStatus === "Settled" && <div className="wallet-final"><Check size={14}/><span>Archived round is read-only. No transaction is required.</span></div>}</div>;
-}
-
-function AuditorRole() {
-  return <><div className="panel-label"><ShieldCheck size={15} /> AUTHORIZED AUDITOR VIEW</div><div className="auditor-lock verified"><div className="lock-visual"><KeyRound size={24}/></div><div><strong>Signed audit export verified</strong><span>Decrypted values remain in the local auditor vault.</span></div></div><div className="state-stack compact"><StateRow label="Auditor key version" value={String(testnetEvidence.audit.auditor.keyVersion)}/><StateRow label="Linked ciphertext events" value={String(testnetEvidence.audit.eventVerification.indexedEvents)} good/><StateRow label="Settlement channels" value="Agree" good/><StateRow label="Recipient disclosure" value="Verified" good/><StateRow label="Disclosure proof" value={`${testnetEvidence.disclosure.proof.bytes.toLocaleString()} B`}/><StateRow label="Export fingerprint" value={compact(testnetEvidence.audit.exportIntegrity.privateExportSha256, 8, 6)}/><StateRow label="Decrypted values" value="Restricted" hidden/></div></>;
-}
-
-function StateRow({ label, value, good, hidden }: { label: string; value: string; good?: boolean; hidden?: boolean }) {
-  return <div className="state-row"><span>{label}</span><strong className={good ? "good" : hidden ? "hidden" : ""}>{good && <Check size={14}/>} {hidden && <EyeOff size={14}/>} {value}</strong></div>;
-}
-
-function LiveCheckPanel({ state }: { state: LiveState }) {
-  if (state.status === "checking") {
-    return <section className="live-check-panel pending"><Activity size={17}/><span>Reading live contract state...</span></section>;
-  }
-  if (state.status === "fallback") {
-    return <section className="live-check-panel fallback"><Clock3 size={17}/><span>Live RPC unavailable. Recorded Testnet evidence remains active.</span></section>;
-  }
   return (
-    <section className={`live-check-panel ${state.status}`} aria-label="Live Testnet checks">
-      {state.snapshot.checks.map((check) => (
-        <div className={check.matched ? "matched" : "failed"} key={check.label}>
-          {check.matched ? <Check size={14}/> : <X size={14}/>}
-          <span>{check.label}</span>
-        </div>
-      ))}
+    <section className="account-action">
+      <div className="account-action-top">
+        <span className="account-icon"><Wallet size={18}/></span>
+        <div><span>CONNECTED CONTEXT</span><strong>{connected ? role : "No wallet connected"}</strong></div>
+        {connected && <StatusTag>{wallet.session.network}</StatusTag>}
+      </div>
+      {connected ? (
+        <>
+          <code>{wallet.session.address}</code>
+          <div className="account-state-row"><span>Fixture round</span><strong>{wallet.roundStatus}</strong></div>
+          <div className="account-state-row"><span>Write availability</span><strong>{wallet.roundStatus === "Settled" ? "Archived" : "Review"}</strong></div>
+          {eligibility.status === "success" && <div className="inline-result success"><Check size={15}/>{eligibility.label}</div>}
+          {eligibility.status === "error" && <div className="inline-result denied"><Ban size={15}/><span><strong>{eligibility.label}</strong><small>{eligibility.code}</small></span></div>}
+          <Pressable className="button-secondary button-full" onClick={onEligibility} disabled={eligibility.status === "loading"}>
+            {eligibility.status === "loading" ? <Activity className="spin" size={16}/> : <ShieldCheck size={16}/>} {eligibility.status === "loading" ? eligibility.label : "Check policy access"}
+          </Pressable>
+        </>
+      ) : (
+        <>
+          <p>Wallet context unlocks account-bound policy and lifecycle state. The verified story remains wallet-free.</p>
+          <Pressable className="button-primary button-full" onClick={onConnect}><Wallet size={16}/> Connect Freighter</Pressable>
+        </>
+      )}
+      <Pressable className="text-action" onClick={onRunDemo}><Play size={14}/> Run wallet-free Testnet story</Pressable>
     </section>
   );
 }
 
-function EvidencePage({ onEvidence, live }: { onEvidence: () => void; live: LiveState }) {
-  const checks = [
-    ["Account-bound registration", testnetEvidence.deployment.verificationKeys.register.transactionHash, "Verified"],
-    ["Controller contract authorization", testnetEvidence.controller.controllerRegistrationTransaction, "Verified"],
-    ["Unauthorized participation", testnetEvidence.setup.rejectedAccount, "Rejected"],
-    ["Max-Bid statement match", testnetEvidence.settlement.maxBidProof.sha256, "448 bytes"],
-    ["Atomic settlement", testnetEvidence.settlement.finalizeTransaction, "Settled"],
-    ["Auditor event linkage", testnetEvidence.settlement.finalizeTransaction, "Verified"],
-    ["Signed audit export", testnetEvidence.audit.auditor.registrationTransaction, "Signed"],
-    ["Recipient-bound disclosure", testnetEvidence.disclosure.event.transaction, "Verified"],
-    ["Atomic bid withdrawal", testnetEvidence.withdrawal.transactions.withdrawBid, "Reclaimed"],
-    ...testnetEvidence.reclaim.losingBidderReclaims.map((item, index) => [
-      `Losing-bid reclaim ${index + 1}`,
-      item.transaction,
-      "Reclaimed",
-    ]),
-  ];
+function PerspectivePanel({ perspective, wallet, onRunDemo, onEligibility }: {
+  perspective: Perspective;
+  wallet: WalletState;
+  onRunDemo: () => void;
+  onEligibility: () => void;
+}) {
+  const connected = wallet.status === "connected";
+  const winner = participants.find((participant) => participant.winner)!;
+  const rows = perspective === "public"
+    ? [
+        ["Bid receipts", "3 confirmed", "good"],
+        ["Bid values", "Hidden", "hidden"],
+        ["Winner", winner.alias, "good"],
+        ["Settlement", "Complete", "good"],
+      ]
+    : perspective === "issuer"
+      ? [
+          ["Terms", "Immutable", "good"],
+          ["RWA escrow", "Delivered", "good"],
+          ["Payment amount", "Confidential", "hidden"],
+          ["Final receipt", compact(testnetEvidence.settlement.finalizeTransaction), "neutral"],
+        ]
+      : perspective === "investor"
+        ? [
+            ["Account", connected ? compact(wallet.session.address, 7, 5) : "Not connected", "neutral"],
+            ["Eligibility", connected ? "Check live policy" : "Account-bound", "neutral"],
+            ["Competing bids", "Not visible", "hidden"],
+            ["Fixture result", connected && wallet.session.address === winner.account ? "Won" : "Private", "neutral"],
+          ]
+        : [
+            ["Key version", String(testnetEvidence.audit.auditor.keyVersion), "good"],
+            ["Linked events", String(testnetEvidence.audit.eventVerification.indexedEvents), "good"],
+            ["Decrypted values", "Local vault only", "hidden"],
+            ["Signed export", "Verified", "good"],
+          ];
   return (
-    <main className="page-shell">
-      <section className="page-title"><div><span className="role-banner">REVIEWER EVIDENCE</span><h1>Verification index</h1><p>Claims mapped to the completed Testnet run.</p></div><button className="primary-button" type="button" onClick={onEvidence}><PanelRightOpen size={17}/> Open receipt</button></section>
-      <LiveCheckPanel state={live}/>
-      <section className="evidence-ledger-band"><div><span>Ledger range</span><strong>{testnetEvidence.deployment.ledgerRange.start.toLocaleString()}–{testnetEvidence.deployment.ledgerRange.end.toLocaleString()}</strong></div><div><span>Final proof hash</span><strong>{compact(testnetEvidence.settlement.maxBidProof.sha256, 12, 10)}</strong></div><div><span>Network</span><strong>Stellar Testnet</strong></div></section>
-      <section className="data-section evidence-table-section"><div className="section-heading"><div><div className="section-kicker">APPEND-ONLY RECORD</div><h2>Claim verification</h2></div><BadgeCheck size={22} className="green-icon"/></div><div className="check-list">{checks.map(([label, reference, result], index) => <a href={index === 2 ? undefined : explorerTransaction(reference)} target="_blank" rel="noreferrer" className="check-row" key={label}><span className={`check-icon ${index === 2 ? "denied" : ""}`}>{index === 2 ? <Ban size={16}/> : <Check size={16}/>}</span><div><strong>{label}</strong><span>{compact(reference, 10, 8)}</span></div><b>{result}</b>{index !== 2 && <ArrowUpRight size={15}/>}</a>)}</div></section>
-      <ProofFingerprint />
-    </main>
+    <div className="perspective-panel panel-enter" key={perspective}>
+      <div className="perspective-banner">
+        <span>{perspective.toUpperCase()} VIEW</span>
+        <StatusTag tone={perspective === "public" ? "muted" : "ink"}>{perspective === "public" ? "No wallet required" : "Role scoped"}</StatusTag>
+      </div>
+      <div className="perspective-rows">
+        {rows.map(([label, value, tone]) => (
+          <div key={label}><span>{label}</span><strong className={tone}>{tone === "hidden" && <EyeOff size={14}/>} {tone === "good" && <Check size={14}/>} {value}</strong></div>
+        ))}
+      </div>
+      <Pressable className="button-secondary button-full" onClick={perspective === "investor" && connected ? onEligibility : onRunDemo}>
+        {perspective === "investor" && connected ? <ShieldCheck size={15}/> : <Play size={15}/>}
+        {perspective === "investor" && connected ? "Check live eligibility" : "Verify this view"}
+      </Pressable>
+    </div>
   );
 }
 
-function ProofFingerprint() {
-  const bytes = useMemo(() => testnetEvidence.settlement.maxBidProof.sha256.match(/.{2}/g)!.map((value) => Number.parseInt(value, 16)), []);
-  return <section className="fingerprint-section"><div><div className="section-kicker">MAX-BID PROOF FINGERPRINT</div><h2>14,592-byte proof</h2><p>{testnetEvidence.settlement.maxBidProof.publicInputBytes} public-input bytes · market statement matched</p></div><div className="fingerprint-bars" aria-label="Visual fingerprint of Max-Bid proof hash">{bytes.map((value, index) => <span key={index} style={{height: `${18 + (value / 255) * 74}%`}} />)}</div></section>;
-}
-
-function ContractsPage() {
+function RoundTimeline({ onRunDemo }: { onRunDemo: () => void }) {
   return (
-    <main className="page-shell">
-      <section className="page-title"><div><span className="role-banner">PINNED TESTNET STACK</span><h1>Contract registry</h1><p>Deployed from the revisions recorded in the evidence manifest.</p></div><div className="network-state large"><span className="network-dot"/>{contracts.length} active contracts</div></section>
-      <section className="contract-grid">{contracts.map(([name, item]) => <a className="contract-row" href={explorerContract(item.contractId)} target="_blank" rel="noreferrer" key={name}><div className="contract-icon"><Database size={18}/></div><div><strong>{name}</strong><span>{item.contractId}</span></div><ArrowUpRight size={17}/></a>)}</section>
-      <section className="revision-band"><div><span>OpenZeppelin contracts</span><strong>{compact(testnetEvidence.deployment.revisions.stellarContracts, 12, 8)}</strong></div><div><span>UltraHonk backend</span><strong>{compact(testnetEvidence.deployment.revisions.ultraHonk, 12, 8)}</strong></div><div><span>Noir</span><strong>{testnetEvidence.deployment.revisions.noir}</strong></div><div><span>Barretenberg</span><strong>{testnetEvidence.deployment.revisions.barretenberg}</strong></div></section>
-    </main>
+    <section className="timeline-section">
+      <SectionHeading kicker="CANONICAL FLOW" title="From escrow to controlled disclosure" action={<Pressable className="button-secondary" onClick={onRunDemo}><Play size={15}/> Replay receipts</Pressable>}/>
+      <div className="round-timeline">
+        {demoSteps.map(({ label, icon: Icon, negative }, index) => (
+          <div key={label} className={negative ? "negative" : ""}>
+            <span className="timeline-node">{negative ? <Ban size={15}/> : <Check size={15}/>}</span>
+            <small>{String(index + 1).padStart(2, "0")}</small>
+            <strong>{label}</strong>
+            <Icon size={16}/>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
-function EvidenceDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const canvas = useRef<HTMLCanvasElement>(null);
-  const [copied, setCopied] = useState(false);
-  useEffect(() => {
-    if (open && canvas.current) QRCode.toCanvas(canvas.current, testnetEvidence.settlement.explorer, { width: 136, margin: 1, color: { dark: "#10231c", light: "#ffffff" } });
-  }, [open]);
-  const copyHash = async () => {
-    await navigator.clipboard.writeText(testnetEvidence.settlement.finalizeTransaction);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1200);
+function OverviewPage({
+  wallet,
+  live,
+  role,
+  eligibility,
+  perspective,
+  onPerspective,
+  onConnect,
+  onEligibility,
+  onRunDemo,
+  onEvidence,
+}: {
+  wallet: WalletState;
+  live: LiveState;
+  role: string;
+  eligibility: AsyncState;
+  perspective: Perspective;
+  onPerspective: (perspective: Perspective) => void;
+  onConnect: () => void;
+  onEligibility: () => void;
+  onRunDemo: () => void;
+  onEvidence: () => void;
+}) {
+  return (
+    <div className="workspace-page page-enter">
+      <section className="workspace-hero">
+        <div className="workspace-hero-copy">
+          <span className="section-kicker">PRIMARY MARKET / FIXED LOT / SEALED BID</span>
+          <h1>Private price discovery.<br/>Public process integrity.</h1>
+          <p>One archived Testnet issuance, independently readable from the market contract and evidence index.</p>
+          <div className="workspace-hero-actions">
+            <Pressable className="button-primary" onClick={onRunDemo}><Play size={16}/> Run verified story</Pressable>
+            <Pressable className="button-secondary" onClick={onEvidence}>Inspect evidence <ArrowRight size={15}/></Pressable>
+          </div>
+        </div>
+        <div className="issuance-pulse">
+          <div className="pulse-top"><span>QBNOTE-26</span><StatusTag>Settled</StatusTag></div>
+          <strong>1.0000000 <small>QBNOTE</small></strong>
+          <div className="pulse-line"><span>Public reserve</span><b>8.0000000 XLM</b></div>
+          <div className="pulse-line"><span>Verified book</span><b>3 investors</b></div>
+          <div className="pulse-line"><span>Bid values</span><b className="hidden"><EyeOff size={13}/> Hidden</b></div>
+          <div className={`pulse-live ${live.status}`}><span/><b>{live.status === "verified" ? "Live state matched" : live.status === "checking" ? "Reading state" : "Recorded evidence active"}</b></div>
+        </div>
+      </section>
+
+      <div className="overview-grid">
+        <section className="round-command">
+          <SectionHeading kicker="LIVE ROUND" title="Role-aware issuance state" action={<div className="perspective-tabs" role="tablist">{perspectives.map(({ id, label, icon: Icon }) => <button key={id} type="button" role="tab" aria-selected={perspective === id} className={perspective === id ? "active" : ""} onClick={() => onPerspective(id)}><Icon size={14}/><span>{label}</span></button>)}</div>}/>
+          <PerspectivePanel perspective={perspective} wallet={wallet} onRunDemo={onRunDemo} onEligibility={onEligibility}/>
+        </section>
+        <AccountAction wallet={wallet} role={role} eligibility={eligibility} onConnect={onConnect} onEligibility={onEligibility} onRunDemo={onRunDemo}/>
+      </div>
+      <RoundTimeline onRunDemo={onRunDemo}/>
+    </div>
+  );
+}
+
+function TransactionButton({ state, onClick, disabled }: { state: AsyncState; onClick: () => void; disabled?: boolean }) {
+  return (
+    <Pressable className="button-primary transaction-button" onClick={onClick} disabled={disabled || state.status === "loading" || state.status === "success"}>
+      {state.status === "loading" ? <Activity className="spin" size={16}/> : state.status === "success" ? <Check size={16}/> : <Wallet size={16}/>}
+      {state.status === "idle" ? "Close on Testnet" : state.label}
+    </Pressable>
+  );
+}
+
+function IssuancesPage({ wallet, lifecycle, onCloseLifecycle, onRunDemo }: {
+  wallet: WalletState;
+  lifecycle: AsyncState;
+  onCloseLifecycle: () => void;
+  onRunDemo: () => void;
+}) {
+  return (
+    <div className="workspace-page page-enter">
+      <div className="page-title-row"><div><span className="section-kicker">ISSUANCE BOOK</span><h1>Rounds</h1><p>Immutable terms, public lifecycle, confidential offer values.</p></div><Pressable className="button-primary" onClick={onRunDemo}><Play size={16}/> Run guided issuance</Pressable></div>
+      <section className="issuance-list">
+        <article className="issuance-row featured">
+          <div className="asset-monogram">QB</div>
+          <div className="issuance-main"><span>DEMO FIXTURE / PRIMARY ISSUANCE</span><h2>QBNOTE-26</h2><p>Fixed RWA lot · 3 verified investors · first-price sealed bid</p></div>
+          <div className="issuance-facts"><span>LOT<strong>1.0000000 QBNOTE</strong></span><span>BOOK<strong>3 sealed receipts</strong></span><span>RESULT<strong>Settled</strong></span></div>
+          <a className="icon-link" href={testnetEvidence.settlement.explorer} target="_blank" rel="noreferrer" aria-label="Open final settlement"><ArrowUpRight size={18}/></a>
+        </article>
+        <article className="issuance-row lifecycle-row">
+          <div className="asset-monogram muted">LX</div>
+          <div className="issuance-main"><span>LIFECYCLE FIXTURE / WITHDRAWAL PATH</span><h2>Bid exit exercise</h2><p>Delegation revoked · bidder removed · zero active bids</p></div>
+          <div className="issuance-facts"><span>ROUND<strong>{compact(testnetEvidence.withdrawal.roundId)}</strong></span><span>STATE<strong>{lifecycle.status === "success" ? "Closed" : "Open fixture"}</strong></span></div>
+          <div className="lifecycle-action">
+            {wallet.status === "connected"
+              ? <TransactionButton state={lifecycle} onClick={onCloseLifecycle}/>
+              : <span className="action-lock"><Wallet size={15}/> Wallet required</span>}
+            <small>This submits a real signed Testnet invocation.</small>
+          </div>
+        </article>
+      </section>
+      {lifecycle.status === "success" && lifecycle.hash && <div className="transaction-result"><BadgeCheck size={18}/><div><strong>Round closed on Testnet</strong><span>{compact(lifecycle.hash, 12, 8)}</span></div><a href={explorerTransaction(lifecycle.hash)} target="_blank" rel="noreferrer">Open receipt <ArrowUpRight size={14}/></a></div>}
+      {lifecycle.status === "error" && <div className="transaction-result error"><Ban size={18}/><div><strong>{lifecycle.label}</strong><span>{lifecycle.code}</span></div></div>}
+    </div>
+  );
+}
+
+function PortfolioPage({ wallet, role, eligibility, onConnect, onEligibility }: {
+  wallet: WalletState;
+  role: string;
+  eligibility: AsyncState;
+  onConnect: () => void;
+  onEligibility: () => void;
+}) {
+  const connected = wallet.status === "connected";
+  const participant = connected ? participants.find((item) => item.account === wallet.session.address) : undefined;
+  return (
+    <div className="workspace-page page-enter">
+      <div className="page-title-row"><div><span className="section-kicker">ACCOUNT-BOUND STATE</span><h1>My access</h1><p>Identity remains visible. Bid values and confidential balances do not.</p></div>{!connected && <Pressable className="button-primary" onClick={onConnect}><Wallet size={16}/> Connect Freighter</Pressable>}</div>
+      <div className="access-layout">
+        <section className="identity-sheet">
+          <div className="identity-head"><span className="identity-glyph"><CircleUserRound size={28}/></span><div><span>CONNECTED ROLE</span><h2>{role}</h2></div><StatusTag tone={connected ? "green" : "muted"}>{connected ? "Testnet" : "Offline"}</StatusTag></div>
+          <div className="identity-address"><span>STELLAR ACCOUNT</span><code>{connected ? wallet.session.address : "Connect an account to resolve identity"}</code></div>
+          <div className="access-checks">
+            <div><span>Fixture participation</span><strong>{participant ? participant.alias : connected ? "Not registered" : "Unknown"}</strong></div>
+            <div><span>Round result</span><strong>{participant ? participant.winner ? "Won" : "Lost · reclaimed" : "No private position"}</strong></div>
+            <div><span>Competing bids</span><strong className="hidden"><EyeOff size={14}/> Never visible</strong></div>
+          </div>
+        </section>
+        <section className="policy-terminal">
+          <span className="section-kicker">ON-CHAIN POLICY</span>
+          <h2>Eligibility boundary</h2>
+          <p>The configured policy evaluates the connected account against the confidential settlement token.</p>
+          <div className={`policy-readout ${eligibility.status}`}>
+            <span>{eligibility.status === "loading" ? <Activity className="spin" size={19}/> : eligibility.status === "success" ? <Check size={19}/> : eligibility.status === "error" ? <Ban size={19}/> : <ShieldCheck size={19}/>}</span>
+            <div><strong>{eligibility.status === "idle" ? "Not checked" : eligibility.label}</strong><small>{eligibility.status === "error" ? eligibility.code : eligibility.status === "success" ? "Policy contract returned authorized" : "Live RPC simulation"}</small></div>
+          </div>
+          <Pressable className="button-primary button-full" onClick={connected ? onEligibility : onConnect} disabled={eligibility.status === "loading"}>{connected ? "Run policy check" : "Connect wallet"} <ArrowRight size={15}/></Pressable>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function AuditPage({ onVerify }: { onVerify: () => void }) {
+  const [disclosure, setDisclosure] = useState<AsyncState>({ status: "idle" });
+  const verifyDisclosure = async () => {
+    setDisclosure({ status: "loading", label: "Matching recipient and event" });
+    await delay(700);
+    const verified = testnetEvidence.disclosure.proof.verified
+      && testnetEvidence.disclosure.verification.chainInputsReconstructed
+      && testnetEvidence.disclosure.verification.designatedRecipientDecrypted
+      && testnetEvidence.disclosure.verification.wrongRecipientRejected;
+    setDisclosure(verified
+      ? { status: "success", label: "Recipient-bound proof verified" }
+      : { status: "error", label: "Disclosure mismatch", code: "DISCLOSURE_BINDING_INVALID" });
+    onVerify();
   };
-  return <><button className={`drawer-scrim ${open ? "open" : ""}`} aria-label="Close evidence drawer" onClick={onClose}/><aside className={`evidence-drawer ${open ? "open" : ""}`} aria-hidden={!open}><div className="drawer-header"><div><span className="section-kicker">FINAL RECEIPT</span><h2>Atomic settlement</h2></div><IconButton label="Close evidence drawer" onClick={onClose}><X size={19}/></IconButton></div><div className="receipt-status"><div className="receipt-check"><Check size={21}/></div><div><strong>Confirmed on Testnet</strong><span>Payment and RWA delivery completed</span></div></div><div className="receipt-block"><span>Transaction hash</span><div className="copy-field"><code>{testnetEvidence.settlement.finalizeTransaction}</code><IconButton label="Copy transaction hash" onClick={copyHash}>{copied ? <Check size={17}/> : <Copy size={17}/>}</IconButton></div></div><div className="receipt-grid"><div><span>Round</span><strong>{compact(testnetEvidence.settlement.roundId)}</strong></div><div><span>Winner</span><strong>{compact(testnetEvidence.settlement.winner)}</strong></div><div><span>Max-Bid proof</span><strong>{testnetEvidence.settlement.maxBidProof.bytes.toLocaleString()} B</strong></div><div><span>Statement</span><strong>{testnetEvidence.settlement.maxBidProof.publicInputBytes} B match</strong></div></div><div className="qr-block"><canvas ref={canvas}/><div><strong>Explorer receipt</strong><span>Stellar Expert · Testnet</span><a href={testnetEvidence.settlement.explorer} target="_blank" rel="noreferrer">Open transaction <ArrowUpRight size={14}/></a></div></div><div className="limitations"><ShieldCheck size={17}/><p>Unaudited Testnet-only prototype. No production or mainnet value.</p></div></aside></>;
+  return (
+    <div className="workspace-page page-enter">
+      <div className="page-title-row"><div><span className="section-kicker">CONTROLLED VISIBILITY</span><h1>Audit & disclosure</h1><p>Confidentiality for the market. Explicit visibility for authorized oversight.</p></div><StatusTag>Signed export verified</StatusTag></div>
+      <div className="visibility-compare">
+        <section className="visibility-side public-side">
+          <div className="visibility-title"><span><Eye size={17}/> PUBLIC MARKET VIEW</span><StatusTag tone="muted">Permissionless</StatusTag></div>
+          {participants.map((participant) => <div className="visibility-person" key={participant.account}><span className="person-index">{String(participant.registrationIndex + 1).padStart(2, "0")}</span><div><strong>{participant.alias}</strong><small>{compact(participant.account)}</small></div><b><EyeOff size={14}/> Sealed</b></div>)}
+          <div className="visibility-result"><span>Winner</span><strong>{participants.find((item) => item.winner)?.alias}</strong></div>
+        </section>
+        <section className="visibility-side auditor-side">
+          <div className="visibility-title"><span><ShieldCheck size={17}/> AUTHORIZED AUDITOR VIEW</span><StatusTag tone="ink">Local vault</StatusTag></div>
+          {participants.map((participant) => <div className="visibility-person" key={participant.account}><span className="person-index">{String(participant.registrationIndex + 1).padStart(2, "0")}</span><div><strong>{participant.alias}</strong><small>Event linkage verified</small></div><b><LockKeyhole size={14}/> Restricted</b></div>)}
+          <div className="visibility-result"><span>Audit export</span><strong>{compact(testnetEvidence.audit.exportIntegrity.privateExportSha256, 10, 7)}</strong></div>
+        </section>
+      </div>
+      <section className="disclosure-workbench">
+        <div className="disclosure-copy"><span className="section-kicker">DISCLOSURE RECIPIENT</span><h2>One settlement fact. One intended recipient.</h2><p>The proof binds the recipient, settlement event and encrypted value without opening unrelated account history.</p></div>
+        <div className="binding-diagram">
+          <span><KeyRound size={17}/> Recipient</span><i/><span><ReceiptText size={17}/> Event</span><i/><span><Fingerprint size={17}/> UltraHonk</span>
+        </div>
+        <Pressable className="button-primary" onClick={verifyDisclosure} disabled={disclosure.status === "loading" || disclosure.status === "success"}>{disclosure.status === "loading" ? <Activity className="spin" size={16}/> : disclosure.status === "success" ? <Check size={16}/> : <Fingerprint size={16}/>} {disclosure.status === "idle" ? "Verify disclosure" : disclosure.label}</Pressable>
+      </section>
+    </div>
+  );
+}
+
+const evidenceRows = [
+  ["RWA escrow funded", testnetEvidence.setup.roundTransactions.fundRound, "TRANSACTION"],
+  ["Round opened", testnetEvidence.setup.roundTransactions.openRound, "TRANSACTION"],
+  ["Participant set frozen", testnetEvidence.settlement.closeTransaction, "TRANSACTION"],
+  ["Atomic settlement", testnetEvidence.settlement.finalizeTransaction, "TRANSACTION"],
+  ["Maximum-bid proof", testnetEvidence.settlement.maxBidProof.sha256, "PROOF SHA-256"],
+  ["Signed audit export", testnetEvidence.audit.exportIntegrity.canonicalPayloadSha256, "EXPORT SHA-256"],
+  ["Recipient disclosure", testnetEvidence.disclosure.proof.sha256, "PROOF SHA-256"],
+] as const;
+
+function EvidencePage({ live, onRefresh }: { live: LiveState; onRefresh: () => void }) {
+  const [copied, setCopied] = useState<string | null>(null);
+  const copy = async (value: string) => {
+    await navigator.clipboard.writeText(value);
+    setCopied(value);
+    window.setTimeout(() => setCopied(null), 1200);
+  };
+  return (
+    <div className="workspace-page page-enter">
+      <div className="page-title-row"><div><span className="section-kicker">APPEND-ONLY TESTNET RECORD</span><h1>Evidence</h1><p>Every product claim resolves to a receipt, proof hash or live contract read.</p></div><Pressable className="button-secondary" onClick={onRefresh}><RefreshCw className={live.status === "checking" ? "spin" : ""} size={15}/> Refresh live reads</Pressable></div>
+      <section className="evidence-health">
+        <div><span className={`health-signal ${live.status}`}/><span><strong>{live.status === "verified" ? "Indexer + RPC matched" : live.status === "checking" ? "Reading live contracts" : "Evidence fallback active"}</strong><small>{live.status === "verified" ? `${live.snapshot.matchedCount}/${live.snapshot.checks.length} independent checks · ledger ${live.snapshot.latestLedger.toLocaleString()}` : "Recorded Testnet artifacts remain inspectable"}</small></span></div>
+        <div><span>ROUND</span><code>{compact(testnetEvidence.settlement.roundId, 10, 8)}</code></div>
+        <div><span>NETWORK</span><strong>Stellar Testnet</strong></div>
+      </section>
+      <section className="evidence-table">
+        <div className="evidence-table-head"><span>CLAIM</span><span>REFERENCE</span><span>TYPE</span><span/></div>
+        {evidenceRows.map(([label, value, type]) => <div className="evidence-row" key={label}><div><span className="evidence-icon"><FileCheck2 size={16}/></span><strong>{label}</strong></div><code>{value}</code><span>{type}</span><div className="evidence-actions"><button type="button" onClick={() => void copy(value)} aria-label={`Copy ${label}`}>{copied === value ? <Check size={15}/> : <Copy size={15}/>}</button>{type === "TRANSACTION" && <a href={explorerTransaction(value)} target="_blank" rel="noreferrer" aria-label={`Open ${label}`}><ArrowUpRight size={15}/></a>}</div></div>)}
+      </section>
+      <div className="limitation-band"><ShieldCheck size={18}/><div><strong>Honest boundary</strong><span>Unaudited Testnet prototype. The auction operator can decrypt bid delegations to generate the winner proof. No production or mainnet value.</span></div></div>
+    </div>
+  );
+}
+
+function DemoTheater({ state, onClose, onEvidence }: { state: DemoState; onClose: () => void; onEvidence: () => void }) {
+  if (!state.open) return null;
+  const complete = state.verified.length === demoSteps.length;
+  const phase = state.active < 4 ? "bidding" : state.active < 6 ? "proof" : "settlement";
+  return (
+    <div className="demo-theater" role="dialog" aria-modal="true" aria-label="Verified Testnet story">
+      <header><Brand/><div className="demo-live"><span className={state.running ? "pulse" : ""}/>{complete ? "VERIFIED RUN COMPLETE" : state.error ? "VERIFICATION INTERRUPTED" : "READING REAL TESTNET RECEIPTS"}</div><Pressable className="icon-pressable inverted" onClick={onClose}><X size={19}/><span className="sr-only">Close verified story</span></Pressable></header>
+      <main>
+        <MarketCanvas phase={phase} className="demo-canvas"/>
+        <div className="demo-copy">
+          <span className="section-kicker">STEP {String(Math.min(state.active + 1, demoSteps.length)).padStart(2, "0")} / {String(demoSteps.length).padStart(2, "0")}</span>
+          <h2>{complete ? "Known investors. Private bids. Verifiable allocation." : state.error ? "Live infrastructure did not answer." : demoSteps[state.active]?.label}</h2>
+          <p>{complete ? "The complete archived issuance matched its contracts, receipts, proof hash and controlled-visibility evidence." : state.error ? "The last successful Testnet evidence remains available without inventing a transaction." : demoSteps[state.active]?.detail}</p>
+          {!complete && !state.error && demoSteps[state.active]?.receipt && <a href={explorerTransaction(demoSteps[state.active]!.receipt!)} target="_blank" rel="noreferrer">Open active receipt <ArrowUpRight size={14}/></a>}
+          {state.error && <span className="demo-error-code">TESTNET_RPC_UNAVAILABLE</span>}
+        </div>
+        <div className="demo-rail">
+          {demoSteps.map((step, index) => {
+            const verified = state.verified.includes(index);
+            const active = state.running && state.active === index;
+            const StepIcon = step.icon;
+            return <div key={step.label} className={`${verified ? "verified" : ""} ${active ? "active" : ""} ${step.negative ? "negative" : ""}`}><span>{verified ? <Check size={15}/> : active ? <Activity className="spin" size={15}/> : <StepIcon size={15}/>}</span><div><strong>{step.label}</strong><small>{verified ? step.negative ? "Denial matched" : "Receipt matched" : active ? "Reading ledger" : "Queued"}</small></div></div>;
+          })}
+        </div>
+        {(complete || state.error) && <div className="demo-finish"><Pressable className="button-primary button-large" onClick={onEvidence}>Open evidence index <ArrowRight size={17}/></Pressable><Pressable className="button-ghost" onClick={onClose}>Return to workspace</Pressable></div>}
+      </main>
+    </div>
+  );
 }
 
 export function App() {
-  const [page, setPage] = useState<Page>("round");
-  const [role, setRole] = useState<Role>("public");
-  const [stage, setStage] = useState<number>(demoSteps.length);
-  const [running, setRunning] = useState(false);
-  const [drawer, setDrawer] = useState(false);
-  const [live, setLive] = useState<LiveState>({ status: "checking" });
+  const [mode, setMode] = useState<AppMode>("landing");
+  const [introStep, setIntroStep] = useState(0);
+  const [workspace, setWorkspace] = useState<Workspace>("overview");
+  const [perspective, setPerspective] = useState<Perspective>("public");
   const [wallet, setWallet] = useState<WalletState>({ status: "disconnected" });
+  const [live, setLive] = useState<LiveState>({ status: "checking" });
+  const [eligibility, setEligibility] = useState<AsyncState>({ status: "idle" });
+  const [lifecycle, setLifecycle] = useState<AsyncState>({ status: "idle" });
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [demo, setDemo] = useState<DemoState>({ open: false, running: false, active: 0, verified: [] });
+  const demoRun = useRef(0);
 
   const refreshLive = useCallback(() => {
     setLive({ status: "checking" });
-    const timeout = new Promise<never>((_, reject) => {
-      window.setTimeout(() => reject(new Error("Testnet verification timed out")), 10_000);
-    });
-    const verification = import("./live").then(({ verifyLiveTestnet }) => verifyLiveTestnet());
-    void Promise.race([verification, timeout])
+    const timeout = new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error("Testnet verification timed out")), 12_000));
+    void Promise.race([import("./live").then(({ verifyLiveTestnet }) => verifyLiveTestnet()), timeout])
       .then((snapshot) => setLive({ status: snapshot.allMatched ? "verified" : "mismatch", snapshot }))
-      .catch((error: unknown) => setLive({
-        status: "fallback",
-        error: error instanceof Error ? error.message : "Testnet verification failed",
-      }));
+      .catch((error: unknown) => setLive({ status: "fallback", error: error instanceof Error ? error.message : "Testnet verification failed" }));
   }, []);
 
   useEffect(() => refreshLive(), [refreshLive]);
 
   useEffect(() => {
-    if (!running) return;
-    const timer = window.setInterval(() => {
-      setStage((current) => {
-        if (current >= demoSteps.length - 1) {
-          setRunning(false);
-          return demoSteps.length;
-        }
-        return current + 1;
-      });
-    }, 780);
-    return () => window.clearInterval(timer);
-  }, [running]);
-
-  const runReplay = () => { setStage(0); setRunning(true); };
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 3_200);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   const connectWallet = useCallback(() => {
     setWallet({ status: "connecting" });
+    setNotice(null);
     void import("./wallet")
       .then(async ({ connectFreighter, productClient }) => {
         const session = await connectFreighter();
@@ -527,22 +809,130 @@ export function App() {
         const nativeStatus = round.status;
         const roundStatus = Array.isArray(nativeStatus) ? String(nativeStatus[0]) : String(nativeStatus);
         setWallet({ status: "connected", session, roundStatus });
+        setNotice(`Wallet connected · ${compact(session.address, 6, 5)}`);
       })
-      .catch((error: unknown) => setWallet({
-        status: "error",
-        message: error instanceof Error ? error.message : "Could not connect Freighter",
-      }));
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : "Could not connect Freighter";
+        setWallet({ status: "error", message });
+        setNotice(message);
+      });
   }, []);
 
+  const disconnectWallet = useCallback(() => {
+    setWallet({ status: "disconnected" });
+    setEligibility({ status: "idle" });
+    setNotice("Wallet disconnected");
+  }, []);
+
+  const checkEligibility = useCallback(() => {
+    if (wallet.status !== "connected") return connectWallet();
+    setEligibility({ status: "loading", label: "Reading policy contract" });
+    void import("./wallet")
+      .then(({ checkPolicyEligibility }) => checkPolicyEligibility(wallet.session.address))
+      .then((authorized) => setEligibility(authorized
+        ? { status: "success", label: "Account is eligible" }
+        : { status: "error", label: "Account is not allowlisted", code: "INVESTOR_NOT_AUTHORIZED" }))
+      .catch(() => setEligibility({ status: "error", label: "Policy read failed", code: "POLICY_RPC_UNAVAILABLE" }));
+  }, [connectWallet, wallet]);
+
+  const closeLifecycle = useCallback(() => {
+    if (wallet.status !== "connected") return connectWallet();
+    setLifecycle({ status: "loading", label: "Awaiting Freighter signature" });
+    void import("./wallet")
+      .then(({ closeLifecycleRound }) => closeLifecycleRound(wallet.session))
+      .then((result) => {
+        setLifecycle({ status: "success", label: "Confirmed on Testnet", hash: result.hash });
+        setNotice("Lifecycle round closed · receipt confirmed");
+      })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : "Transaction failed";
+        const alreadyClosed = /RoundNotOpen|status|rejected/i.test(message);
+        setLifecycle({ status: "error", label: alreadyClosed ? "Round is no longer open" : message, code: alreadyClosed ? "ROUND_NOT_OPEN" : "TRANSACTION_REJECTED" });
+      });
+  }, [connectWallet, wallet]);
+
+  const startDemo = useCallback(async () => {
+    const run = ++demoRun.current;
+    setDemo({ open: true, running: true, active: 0, verified: [] });
+    try {
+      const verification = import("./live").then(({ verifyLiveTestnet }) => verifyLiveTestnet());
+      await delay(500);
+      const snapshot = await verification;
+      if (run !== demoRun.current) return;
+      const evidenceValid = testnetEvidence.setup.unauthorizedRegistrationRejected
+        && testnetEvidence.disclosure.verification.designatedRecipientDecrypted
+        && testnetEvidence.settlement.maxBidProof.marketStatementMatched;
+      if (!snapshot.allMatched || !evidenceValid) throw new Error("Evidence mismatch");
+      for (let index = 0; index < demoSteps.length; index += 1) {
+        if (run !== demoRun.current) return;
+        setDemo((current) => ({ ...current, active: index }));
+        await delay(index === 2 ? 800 : 560);
+        if (run !== demoRun.current) return;
+        setDemo((current) => ({ ...current, verified: [...current.verified, index] }));
+      }
+      setDemo((current) => ({ ...current, running: false, active: demoSteps.length }));
+    } catch (error) {
+      if (run !== demoRun.current) return;
+      setDemo((current) => ({ ...current, running: false, error: error instanceof Error ? error.message : "Verification failed" }));
+    }
+  }, []);
+
+  const closeDemo = () => {
+    demoRun.current += 1;
+    setDemo({ open: false, running: false, active: 0, verified: [] });
+  };
+  const openEvidence = () => {
+    closeDemo();
+    setMode("console");
+    setWorkspace("evidence");
+  };
+  const completeIntro = () => {
+    setMode("console");
+    window.setTimeout(() => void startDemo(), 320);
+  };
+  const role = useMemo(() => walletRole(wallet), [wallet]);
+
   return (
-    <div className="app-frame">
-      <AppHeader page={page} setPage={setPage}/>
-      <LiveVerificationBar state={live} refresh={refreshLive}/>
-      {page === "round" && <main className="page-shell"><RoundHeader onEvidence={() => setDrawer(true)}/><Metrics/><JudgeReplay stage={stage} running={running} onRun={runReplay} onStop={() => setRunning(false)}/><div className="main-grid"><ParticipantsTable/><RolePanel role={role} setRole={setRole} wallet={wallet} connectWallet={connectWallet} disconnectWallet={() => setWallet({ status: "disconnected" })}/></div></main>}
-      {page === "evidence" && <EvidencePage onEvidence={() => setDrawer(true)} live={live}/>}
-      {page === "contracts" && <ContractsPage/>}
-      <EvidenceDrawer open={drawer} onClose={() => setDrawer(false)}/>
-      <footer><span>QuietBook · Stellar Testnet · Unaudited prototype</span><a href={testnetEvidence.settlement.explorer} target="_blank" rel="noreferrer"><Link2 size={14}/> Evidence receipt</a></footer>
-    </div>
+    <>
+      {mode === "landing" && (
+        <Landing
+          wallet={wallet}
+          live={live}
+          onConnect={connectWallet}
+          onDisconnect={disconnectWallet}
+          onIntro={() => { setIntroStep(0); setMode("intro"); }}
+          onConsole={() => setMode("console")}
+        />
+      )}
+      {mode === "intro" && (
+        <Intro step={introStep} onStep={setIntroStep} onBack={() => setMode("landing")} onComplete={completeIntro}/>
+      )}
+      {mode === "console" && (
+        <div className="console-shell page-enter">
+          <Sidebar workspace={workspace} open={sidebarOpen} onSelect={setWorkspace} onClose={() => setSidebarOpen(false)}/>
+          <div className="console-main">
+            <ConsoleHeader workspace={workspace} wallet={wallet} live={live} onConnect={connectWallet} onDisconnect={disconnectWallet} onMenu={() => setSidebarOpen(true)}/>
+            {workspace === "overview" && (
+              <OverviewPage wallet={wallet} live={live} role={role} eligibility={eligibility} perspective={perspective} onPerspective={setPerspective} onConnect={connectWallet} onEligibility={checkEligibility} onRunDemo={() => void startDemo()} onEvidence={() => setWorkspace("evidence")}/>
+            )}
+            {workspace === "issuances" && (
+              <IssuancesPage wallet={wallet} lifecycle={lifecycle} onCloseLifecycle={closeLifecycle} onRunDemo={() => void startDemo()}/>
+            )}
+            {workspace === "portfolio" && (
+              <PortfolioPage wallet={wallet} role={role} eligibility={eligibility} onConnect={connectWallet} onEligibility={checkEligibility}/>
+            )}
+            {workspace === "audit" && (
+              <AuditPage onVerify={() => setNotice("Disclosure proof bindings matched")}/>
+            )}
+            {workspace === "evidence" && (
+              <EvidencePage live={live} onRefresh={refreshLive}/>
+            )}
+          </div>
+        </div>
+      )}
+      <DemoTheater state={demo} onClose={closeDemo} onEvidence={openEvidence}/>
+      {notice && <div className="toast" role="status"><Check size={15}/><span>{notice}</span><button type="button" onClick={() => setNotice(null)} aria-label="Dismiss notification"><X size={14}/></button></div>}
+      {wallet.status === "error" && !notice && <div className="toast error" role="alert"><Ban size={15}/><span>{wallet.message}</span><button type="button" onClick={() => setWallet({ status: "disconnected" })} aria-label="Dismiss wallet error"><X size={14}/></button></div>}
+    </>
   );
 }

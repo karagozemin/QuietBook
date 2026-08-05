@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("verified judge flow remains usable", async ({ page }) => {
+test("landing, intro and verified Testnet story remain usable", async ({ page }) => {
   const browserErrors: string[] = [];
   page.on("console", (message) => {
     if (message.type() === "error") browserErrors.push(message.text());
@@ -8,8 +8,20 @@ test("verified judge flow remains usable", async ({ page }) => {
   page.on("pageerror", (error) => browserErrors.push(error.message));
 
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: /QBNOTE-26/ })).toBeVisible();
-  await expect(page.getByText(/^(Indexer \+ RPC|Live RPC) verified$/)).toBeVisible({ timeout: 12_000 });
+  await expect(page.getByRole("heading", { name: "QuietBook", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect wallet" })).toBeVisible();
+
+  const canvasPixels = await page.locator("canvas.hero-canvas").evaluate((canvas: HTMLCanvasElement) => {
+    const context = canvas.getContext("2d");
+    if (!context || canvas.width === 0 || canvas.height === 0) return 0;
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let visible = 0;
+    for (let index = 3; index < pixels.length; index += 64) {
+      if (pixels[index]! > 0) visible += 1;
+    }
+    return visible;
+  });
+  expect(canvasPixels).toBeGreaterThan(100);
 
   const dimensions = await page.evaluate(() => ({
     client: document.documentElement.clientWidth,
@@ -17,47 +29,33 @@ test("verified judge flow remains usable", async ({ page }) => {
   }));
   expect(dimensions.scroll).toBe(dimensions.client);
 
-  await page.getByRole("button", { name: "Replay verified run" }).click();
-  await expect(page.getByRole("heading", { name: "Verified run complete" })).toBeVisible({
-    timeout: 8_000,
-  });
-
-  for (const role of ["Issuer", "Investor", "Auditor", "Public"]) {
-    await page.getByRole("tab", { name: role, exact: true }).click();
-  }
-  await page.getByRole("tab", { name: "Auditor", exact: true }).click();
-  await expect(page.getByText("Recipient disclosure", { exact: true })).toBeVisible();
-  await page.getByRole("tab", { name: "Investor", exact: true }).click();
   await page.getByRole("button", { name: "Connect wallet" }).click();
   await expect(page.getByText("Freighter extension was not detected", { exact: true })).toBeVisible({ timeout: 4_000 });
-  await page.getByRole("tab", { name: "Public", exact: true }).click();
 
-  await page.locator(".round-actions").getByRole("button", { name: "Evidence" }).click();
-  await expect(page.getByRole("heading", { name: "Atomic settlement" })).toBeVisible();
-  const qrSize = await page.locator(".evidence-drawer canvas").evaluate((canvas) => ({
-    width: canvas.width,
-    height: canvas.height,
-  }));
-  expect(qrSize.width).toBeGreaterThan(0);
-  expect(qrSize.height).toBeGreaterThan(0);
-  await page.locator(".evidence-drawer").getByTitle("Close evidence drawer").click();
+  await page.getByRole("button", { name: "Run Testnet story" }).click();
+  await expect(page.getByRole("heading", { name: "The market sees participation. Not the demand curve." })).toBeVisible();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("heading", { name: "The winner is proven against the complete book." })).toBeVisible();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("heading", { name: "Confidential payment. Public delivery. One invocation." })).toBeVisible();
+  await page.getByRole("button", { name: "Enter verified run" }).click();
 
-  await page.locator(".main-nav").getByRole("button", { name: "Evidence" }).click();
-  await expect(page.getByRole("heading", { name: "Verification index" })).toBeVisible();
-  await expect(page.getByText("Settlement receipt confirmed", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Contracts" }).click();
-  await expect(page.getByRole("heading", { name: "Contract registry" })).toBeVisible();
-  await page.getByRole("button", { name: "Live round" }).click();
+  await expect(page.getByRole("dialog", { name: "Verified Testnet story" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Known investors. Private bids. Verifiable allocation." })).toBeVisible({ timeout: 22_000 });
+  await page.getByRole("button", { name: "Open evidence index" }).click();
+  await expect(page.getByRole("heading", { name: "Evidence", exact: true })).toBeVisible();
+  await expect(page.getByText("Atomic settlement", { exact: true })).toBeVisible();
 
   expect(browserErrors).toEqual([]);
 });
 
-test("falls back to recorded evidence when public RPC is unavailable", async ({ page }) => {
+test("live story fails honestly when public RPC is unavailable", async ({ page }) => {
   await page.route("https://soroban-testnet.stellar.org/**", (route) => route.abort());
   await page.goto("/");
-  await expect(page.getByText("Evidence fallback active", { exact: true })).toBeVisible({
-    timeout: 12_000,
-  });
-  await page.locator(".main-nav").getByRole("button", { name: "Evidence" }).click();
-  await expect(page.getByText(/Recorded Testnet evidence remains active/)).toBeVisible();
+  await expect(page.getByText("Evidence fallback", { exact: true })).toBeVisible({ timeout: 14_000 });
+  await page.getByRole("button", { name: /Explore live round/ }).click();
+  await expect(page.getByRole("heading", { name: /Private price discovery/ })).toBeVisible();
+  await page.getByRole("button", { name: "Run verified story" }).click();
+  await expect(page.getByRole("heading", { name: "Live infrastructure did not answer." })).toBeVisible({ timeout: 14_000 });
+  await expect(page.getByText("TESTNET_RPC_UNAVAILABLE", { exact: true })).toBeVisible();
 });

@@ -6,10 +6,12 @@ import {
 } from "@stellar/freighter-api";
 import {
   Account,
+  Address,
   BASE_FEE,
   Contract,
   Networks,
   TransactionBuilder,
+  scValToNative,
   rpc,
   type xdr,
 } from "@stellar/stellar-sdk";
@@ -146,4 +148,28 @@ export function productClient() {
       confidentialToken: testnetEvidence.deployment.contracts.confidentialToken.contractId,
     },
   );
+}
+
+export async function checkPolicyEligibility(account: string): Promise<boolean> {
+  const client = productClient();
+  const result = await client.chain.simulate(
+    testnetEvidence.deployment.contracts.eligibilityPolicy.contractId,
+    "is_authorized",
+    [
+      new Address(account).toScVal(),
+      new Address(testnetEvidence.deployment.contracts.confidentialToken.contractId).toScVal(),
+    ],
+  );
+  return scValToNative(result) === true;
+}
+
+export async function closeLifecycleRound(session: WalletSession) {
+  const client = new QuietBookClient(
+    new BrowserProductChain(testnetEvidence.deployment.rpcUrl),
+    {
+      market: testnetEvidence.withdrawal.market,
+      confidentialToken: testnetEvidence.deployment.contracts.confidentialToken.contractId,
+    },
+  );
+  return client.closeRound(testnetEvidence.withdrawal.roundId, freighterSigner(session));
 }
