@@ -6,10 +6,8 @@ import {
   BadgeCheck,
   Ban,
   BookOpen,
-  BriefcaseBusiness,
   Check,
   ChevronRight,
-  CircleDollarSign,
   CircleUserRound,
   Clock3,
   Copy,
@@ -18,7 +16,6 @@ import {
   EyeOff,
   FileCheck2,
   Fingerprint,
-  Gauge,
   KeyRound,
   Landmark,
   Layers3,
@@ -27,8 +24,6 @@ import {
   LockKeyhole,
   LogOut,
   Menu,
-  Network,
-  PanelRight,
   Play,
   Radio,
   ReceiptText,
@@ -36,17 +31,14 @@ import {
   Scale,
   ScanEye,
   ShieldCheck,
-  Users,
   Wallet,
   X,
-  Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { MarketCanvas } from "./MarketCanvas";
 import {
   compact,
-  explorerContract,
   explorerTransaction,
   participants,
   testnetEvidence,
@@ -55,7 +47,7 @@ import type { LiveSnapshot } from "./live";
 import type { WalletSession } from "./wallet";
 
 type AppMode = "landing" | "intro" | "console";
-type Workspace = "overview" | "issuances" | "portfolio" | "audit" | "evidence";
+type Workspace = "overview" | "portfolio" | "audit" | "evidence";
 type Perspective = "public" | "issuer" | "investor" | "auditor";
 type WalletState =
   | { status: "disconnected" }
@@ -116,18 +108,10 @@ const introSlides: Array<{
 ];
 
 const workspaceItems: Array<{ id: Workspace; label: string; icon: IconType }> = [
-  { id: "overview", label: "Overview", icon: LayoutDashboard },
-  { id: "issuances", label: "Issuances", icon: BriefcaseBusiness },
-  { id: "portfolio", label: "My access", icon: CircleUserRound },
-  { id: "audit", label: "Audit & disclosure", icon: ScanEye },
+  { id: "overview", label: "Market", icon: LayoutDashboard },
+  { id: "portfolio", label: "My wallet", icon: CircleUserRound },
+  { id: "audit", label: "Audit", icon: ScanEye },
   { id: "evidence", label: "Evidence", icon: Database },
-];
-
-const perspectives: Array<{ id: Perspective; label: string; icon: IconType }> = [
-  { id: "public", label: "Public", icon: Eye },
-  { id: "issuer", label: "Issuer", icon: Landmark },
-  { id: "investor", label: "Investor", icon: Users },
-  { id: "auditor", label: "Auditor", icon: ShieldCheck },
 ];
 
 const demoSteps: Array<{
@@ -528,15 +512,59 @@ function RoundTimeline({ onRunDemo }: { onRunDemo: () => void }) {
   );
 }
 
+function WalletActionPanel({
+  wallet,
+  role,
+  eligibility,
+  lifecycle,
+  onConnect,
+  onEligibility,
+  onCloseLifecycle,
+}: {
+  wallet: WalletState;
+  role: string;
+  eligibility: AsyncState;
+  lifecycle: AsyncState;
+  onConnect: () => void;
+  onEligibility: () => void;
+  onCloseLifecycle: () => void;
+}) {
+  const connected = wallet.status === "connected";
+  const policyChecked = eligibility.status === "success" || eligibility.status === "error";
+  return (
+    <section className="wallet-flow">
+      <div className="wallet-flow-head">
+        <span className="account-icon"><Wallet size={18}/></span>
+        <div><span>YOUR WALLET</span><h2>{connected ? role : "Start here"}</h2></div>
+        {connected && <StatusTag>{wallet.session.network}</StatusTag>}
+      </div>
+      {connected && <code>{wallet.session.address}</code>}
+      <div className="wallet-flow-steps">
+        <div className={connected ? "complete" : "active"}><span>{connected ? <Check size={14}/> : "1"}</span><div><strong>Connect wallet</strong><small>{connected ? "Freighter connected" : "Stellar Testnet account"}</small></div></div>
+        <div className={policyChecked ? "complete" : connected ? "active" : ""}><span>{policyChecked ? <Check size={14}/> : "2"}</span><div><strong>Check access</strong><small>{policyChecked ? eligibility.label : "Read the on-chain policy"}</small></div></div>
+        <div className={lifecycle.status === "success" ? "complete" : policyChecked ? "active" : ""}><span>{lifecycle.status === "success" ? <Check size={14}/> : "3"}</span><div><strong>Close bid window</strong><small>{lifecycle.status === "success" ? "Testnet receipt confirmed" : "Submit close_round with Freighter"}</small></div></div>
+      </div>
+      {!connected && <Pressable className="button-primary button-full" onClick={onConnect}><Wallet size={16}/> Connect Freighter</Pressable>}
+      {connected && !policyChecked && <Pressable className="button-primary button-full" onClick={onEligibility} disabled={eligibility.status === "loading"}>{eligibility.status === "loading" ? <Activity className="spin" size={16}/> : <ShieldCheck size={16}/>} {eligibility.status === "loading" ? eligibility.label : "Check my access"}</Pressable>}
+      {connected && policyChecked && lifecycle.status !== "success" && (
+        <TransactionButton state={lifecycle} onClick={onCloseLifecycle}/>
+      )}
+      {connected && policyChecked && <div className="wallet-flow-note"><Clock3 size={15}/><span><strong>QBNOTE-26 is already settled.</strong> The available write closes the empty lifecycle fixture; no bid value is requested.</span></div>}
+      {lifecycle.status === "success" && lifecycle.hash && <a className="receipt-link" href={explorerTransaction(lifecycle.hash)} target="_blank" rel="noreferrer"><ReceiptText size={15}/> View confirmed receipt <ArrowUpRight size={14}/></a>}
+      {lifecycle.status === "error" && <div className="inline-result denied"><Ban size={15}/><span><strong>{lifecycle.label}</strong><small>{lifecycle.code}</small></span></div>}
+    </section>
+  );
+}
+
 function OverviewPage({
   wallet,
   live,
   role,
   eligibility,
-  perspective,
-  onPerspective,
+  lifecycle,
   onConnect,
   onEligibility,
+  onCloseLifecycle,
   onRunDemo,
   onEvidence,
 }: {
@@ -544,10 +572,10 @@ function OverviewPage({
   live: LiveState;
   role: string;
   eligibility: AsyncState;
-  perspective: Perspective;
-  onPerspective: (perspective: Perspective) => void;
+  lifecycle: AsyncState;
   onConnect: () => void;
   onEligibility: () => void;
+  onCloseLifecycle: () => void;
   onRunDemo: () => void;
   onEvidence: () => void;
 }) {
@@ -555,12 +583,12 @@ function OverviewPage({
     <div className="workspace-page page-enter">
       <section className="workspace-hero">
         <div className="workspace-hero-copy">
-          <span className="section-kicker">PRIMARY MARKET / FIXED LOT / SEALED BID</span>
-          <h1>Private price discovery.<br/>Public process integrity.</h1>
-          <p>One archived Testnet issuance, independently readable from the market contract and evidence index.</p>
+          <span className="section-kicker">CURRENT ISSUANCE / SETTLED</span>
+          <h1>QBNOTE-26</h1>
+          <p>A fixed tokenized asset lot sold through three confidential offers. Connect your wallet for account-specific actions.</p>
           <div className="workspace-hero-actions">
-            <Pressable className="button-primary" onClick={onRunDemo}><Play size={16}/> Run verified story</Pressable>
-            <Pressable className="button-secondary" onClick={onEvidence}>Inspect evidence <ArrowRight size={15}/></Pressable>
+            <Pressable className="button-primary" onClick={onRunDemo}><Play size={16}/> Verify completed round</Pressable>
+            <Pressable className="button-secondary" onClick={onEvidence}>View receipts <ArrowRight size={15}/></Pressable>
           </div>
         </div>
         <div className="issuance-pulse">
@@ -574,13 +602,19 @@ function OverviewPage({
       </section>
 
       <div className="overview-grid">
-        <section className="round-command">
-          <SectionHeading kicker="LIVE ROUND" title="Role-aware issuance state" action={<div className="perspective-tabs" role="tablist">{perspectives.map(({ id, label, icon: Icon }) => <button key={id} type="button" role="tab" aria-selected={perspective === id} className={perspective === id ? "active" : ""} onClick={() => onPerspective(id)}><Icon size={14}/><span>{label}</span></button>)}</div>}/>
-          <PerspectivePanel perspective={perspective} wallet={wallet} onRunDemo={onRunDemo} onEligibility={onEligibility}/>
+        <section className="round-summary">
+          <SectionHeading kicker="ROUND SUMMARY" title="What happened" action={<StatusTag>Settled</StatusTag>}/>
+          <div className="round-summary-rows">
+            <div><span>RWA lot</span><strong>1.0000000 QBNOTE</strong></div>
+            <div><span>Verified investors</span><strong>3 accounts</strong></div>
+            <div><span>Bid values</span><strong className="hidden"><EyeOff size={14}/> Hidden</strong></div>
+            <div><span>Winner</span><strong>{participants.find((item) => item.winner)?.alias}</strong></div>
+            <div><span>Max-bid proof</span><strong><Check size={14}/> Verified</strong></div>
+            <div><span>Settlement</span><strong><Check size={14}/> Atomic</strong></div>
+          </div>
         </section>
-        <AccountAction wallet={wallet} role={role} eligibility={eligibility} onConnect={onConnect} onEligibility={onEligibility} onRunDemo={onRunDemo}/>
+        <WalletActionPanel wallet={wallet} role={role} eligibility={eligibility} lifecycle={lifecycle} onConnect={onConnect} onEligibility={onEligibility} onCloseLifecycle={onCloseLifecycle}/>
       </div>
-      <RoundTimeline onRunDemo={onRunDemo}/>
     </div>
   );
 }
@@ -589,7 +623,7 @@ function TransactionButton({ state, onClick, disabled }: { state: AsyncState; on
   return (
     <Pressable className="button-primary transaction-button" onClick={onClick} disabled={disabled || state.status === "loading" || state.status === "success"}>
       {state.status === "loading" ? <Activity className="spin" size={16}/> : state.status === "success" ? <Check size={16}/> : <Wallet size={16}/>}
-      {state.status === "idle" ? "Close on Testnet" : state.label}
+      {state.status === "idle" ? "Close empty round on Testnet" : state.label}
     </Pressable>
   );
 }
@@ -742,18 +776,15 @@ function EvidencePage({ live, onRefresh }: { live: LiveState; onRefresh: () => v
 function DemoTheater({ state, onClose, onEvidence }: { state: DemoState; onClose: () => void; onEvidence: () => void }) {
   if (!state.open) return null;
   const complete = state.verified.length === demoSteps.length;
-  const phase = state.active < 4 ? "bidding" : state.active < 6 ? "proof" : "settlement";
+  const current = demoSteps[Math.min(state.active, demoSteps.length - 1)]!;
   return (
     <div className="demo-theater" role="dialog" aria-modal="true" aria-label="Verified Testnet story">
-      <header><Brand/><div className="demo-live"><span className={state.running ? "pulse" : ""}/>{complete ? "VERIFIED RUN COMPLETE" : state.error ? "VERIFICATION INTERRUPTED" : "READING REAL TESTNET RECEIPTS"}</div><Pressable className="icon-pressable inverted" onClick={onClose}><X size={19}/><span className="sr-only">Close verified story</span></Pressable></header>
-      <main>
-        <MarketCanvas phase={phase} className="demo-canvas"/>
-        <div className="demo-copy">
-          <span className="section-kicker">STEP {String(Math.min(state.active + 1, demoSteps.length)).padStart(2, "0")} / {String(demoSteps.length).padStart(2, "0")}</span>
-          <h2>{complete ? "Known investors. Private bids. Verifiable allocation." : state.error ? "Live infrastructure did not answer." : demoSteps[state.active]?.label}</h2>
-          <p>{complete ? "The complete archived issuance matched its contracts, receipts, proof hash and controlled-visibility evidence." : state.error ? "The last successful Testnet evidence remains available without inventing a transaction." : demoSteps[state.active]?.detail}</p>
-          {!complete && !state.error && demoSteps[state.active]?.receipt && <a href={explorerTransaction(demoSteps[state.active]!.receipt!)} target="_blank" rel="noreferrer">Open active receipt <ArrowUpRight size={14}/></a>}
-          {state.error && <span className="demo-error-code">TESTNET_RPC_UNAVAILABLE</span>}
+      <section className="verification-dialog">
+        <header><div><span className="section-kicker">LIVE TESTNET VERIFICATION</span><h2>{complete ? "Round verified" : state.error ? "Verification unavailable" : "Checking receipts"}</h2></div><Pressable className="icon-pressable" onClick={onClose}><X size={18}/><span className="sr-only">Close verified story</span></Pressable></header>
+        <div className={`verification-current ${state.error ? "error" : complete ? "complete" : ""}`}>
+          <span>{state.error ? <Ban size={20}/> : complete ? <Check size={20}/> : <Activity className="spin" size={20}/>}</span>
+          <div><strong>{complete ? "All eight checks matched" : state.error ? "Live infrastructure did not answer" : current.label}</strong><small>{complete ? "Contracts, receipts and proof hashes agree" : state.error ? "Recorded evidence remains available" : current.detail}</small></div>
+          {!complete && !state.error && current.receipt && <a href={explorerTransaction(current.receipt)} target="_blank" rel="noreferrer" aria-label="Open active receipt"><ArrowUpRight size={16}/></a>}
         </div>
         <div className="demo-rail">
           {demoSteps.map((step, index) => {
@@ -763,8 +794,9 @@ function DemoTheater({ state, onClose, onEvidence }: { state: DemoState; onClose
             return <div key={step.label} className={`${verified ? "verified" : ""} ${active ? "active" : ""} ${step.negative ? "negative" : ""}`}><span>{verified ? <Check size={15}/> : active ? <Activity className="spin" size={15}/> : <StepIcon size={15}/>}</span><div><strong>{step.label}</strong><small>{verified ? step.negative ? "Denial matched" : "Receipt matched" : active ? "Reading ledger" : "Queued"}</small></div></div>;
           })}
         </div>
-        {(complete || state.error) && <div className="demo-finish"><Pressable className="button-primary button-large" onClick={onEvidence}>Open evidence index <ArrowRight size={17}/></Pressable><Pressable className="button-ghost" onClick={onClose}>Return to workspace</Pressable></div>}
-      </main>
+        {state.error && <span className="demo-error-code">TESTNET_RPC_UNAVAILABLE</span>}
+        <footer>{complete || state.error ? <><Pressable className="button-primary" onClick={onEvidence}>Open evidence <ArrowRight size={16}/></Pressable><Pressable className="button-secondary" onClick={onClose}>Close</Pressable></> : <span><Activity className="spin" size={14}/> Reading ledger {state.active + 1} of {demoSteps.length}</span>}</footer>
+      </section>
     </div>
   );
 }
@@ -773,7 +805,6 @@ export function App() {
   const [mode, setMode] = useState<AppMode>("landing");
   const [introStep, setIntroStep] = useState(0);
   const [workspace, setWorkspace] = useState<Workspace>("overview");
-  const [perspective, setPerspective] = useState<Perspective>("public");
   const [wallet, setWallet] = useState<WalletState>({ status: "disconnected" });
   const [live, setLive] = useState<LiveState>({ status: "checking" });
   const [eligibility, setEligibility] = useState<AsyncState>({ status: "idle" });
@@ -792,6 +823,10 @@ export function App() {
   }, []);
 
   useEffect(() => refreshLive(), [refreshLive]);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }, [mode, workspace]);
 
   useEffect(() => {
     if (!notice) return;
@@ -888,7 +923,7 @@ export function App() {
   };
   const completeIntro = () => {
     setMode("console");
-    window.setTimeout(() => void startDemo(), 320);
+    setWorkspace("overview");
   };
   const role = useMemo(() => walletRole(wallet), [wallet]);
 
@@ -913,10 +948,7 @@ export function App() {
           <div className="console-main">
             <ConsoleHeader workspace={workspace} wallet={wallet} live={live} onConnect={connectWallet} onDisconnect={disconnectWallet} onMenu={() => setSidebarOpen(true)}/>
             {workspace === "overview" && (
-              <OverviewPage wallet={wallet} live={live} role={role} eligibility={eligibility} perspective={perspective} onPerspective={setPerspective} onConnect={connectWallet} onEligibility={checkEligibility} onRunDemo={() => void startDemo()} onEvidence={() => setWorkspace("evidence")}/>
-            )}
-            {workspace === "issuances" && (
-              <IssuancesPage wallet={wallet} lifecycle={lifecycle} onCloseLifecycle={closeLifecycle} onRunDemo={() => void startDemo()}/>
+              <OverviewPage wallet={wallet} live={live} role={role} eligibility={eligibility} lifecycle={lifecycle} onConnect={connectWallet} onEligibility={checkEligibility} onCloseLifecycle={closeLifecycle} onRunDemo={() => void startDemo()} onEvidence={() => setWorkspace("evidence")}/>
             )}
             {workspace === "portfolio" && (
               <PortfolioPage wallet={wallet} role={role} eligibility={eligibility} onConnect={connectWallet} onEligibility={checkEligibility}/>

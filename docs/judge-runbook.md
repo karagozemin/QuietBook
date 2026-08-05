@@ -15,7 +15,7 @@ Open the local URL printed by Vite (`http://127.0.0.1:5173` by default). The ind
 
 1. On the landing screen, confirm the live Testnet ledger indicator resolves and select `Run Testnet story`.
 2. Continue through the private-book, winner-proof, and atomic-settlement intro, then select `Enter verified run`.
-3. Watch the bounded eight-step receipt verification, including the policy denial, and open the evidence index when it completes.
+3. Select `Verify completed round`, watch the compact eight-step receipt verification including the policy denial, and open the evidence index when it completes.
 4. Return to Overview and switch between Public, Issuer, Investor, and Auditor perspectives. Public values stay sealed; role-specific integrity state remains visible.
 5. Open `Audit & disclosure` to compare public and authorized-auditor visibility and verify the recipient-bound disclosure.
 6. Optionally connect Freighter. `My access` performs a live policy read for the connected Testnet account; accounts outside the fixture are correctly reported as unauthorized.

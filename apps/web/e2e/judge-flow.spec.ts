@@ -40,9 +40,14 @@ test("landing, intro and verified Testnet story remain usable", async ({ page })
   await expect(page.getByRole("heading", { name: "Confidential payment. Public delivery. One invocation." })).toBeVisible();
   await page.getByRole("button", { name: "Enter verified run" }).click();
 
+  await expect(page.getByRole("heading", { name: "QBNOTE-26", exact: true })).toBeVisible();
+  await expect(page.getByText("Start here", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Verify completed round" }).click();
   await expect(page.getByRole("dialog", { name: "Verified Testnet story" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Known investors. Private bids. Verifiable allocation." })).toBeVisible({ timeout: 22_000 });
-  await page.getByRole("button", { name: "Open evidence index" }).click();
+  await expect(page.getByRole("heading", { name: "Round verified" })).toBeVisible({ timeout: 22_000 });
+  const dialogBox = await page.getByRole("dialog", { name: "Verified Testnet story" }).locator(".verification-dialog").boundingBox();
+  expect(dialogBox?.width).toBeLessThanOrEqual(720);
+  await page.getByRole("button", { name: "Open evidence" }).click();
   await expect(page.getByRole("heading", { name: "Evidence", exact: true })).toBeVisible();
   await expect(page.getByText("Atomic settlement", { exact: true })).toBeVisible();
 
@@ -54,8 +59,8 @@ test("live story fails honestly when public RPC is unavailable", async ({ page }
   await page.goto("/");
   await expect(page.getByText("Evidence fallback", { exact: true })).toBeVisible({ timeout: 14_000 });
   await page.getByRole("button", { name: /Explore live round/ }).click();
-  await expect(page.getByRole("heading", { name: /Private price discovery/ })).toBeVisible();
-  await page.getByRole("button", { name: "Run verified story" }).click();
-  await expect(page.getByRole("heading", { name: "Live infrastructure did not answer." })).toBeVisible({ timeout: 14_000 });
+  await expect(page.getByRole("heading", { name: "QBNOTE-26", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Verify completed round" }).click();
+  await expect(page.getByText("Live infrastructure did not answer", { exact: true })).toBeVisible({ timeout: 14_000 });
   await expect(page.getByText("TESTNET_RPC_UNAVAILABLE", { exact: true })).toBeVisible();
 });
