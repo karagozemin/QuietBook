@@ -220,7 +220,7 @@ function WalletButton({ wallet, onConnect, onDisconnect }: {
 function Brand({ compactBrand = false }: { compactBrand?: boolean }) {
   return (
     <div className={`brand ${compactBrand ? "compact" : ""}`}>
-      <span className="brand-symbol"><BookOpen size={19}/></span>
+      <span className="brand-symbol"><img src="/quietbook-logo.jpg" alt="" /></span>
       <span><strong>QuietBook</strong>{!compactBrand && <small>Primary issuance</small>}</span>
     </div>
   );

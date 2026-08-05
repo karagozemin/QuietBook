@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./QuietBook.jpg" alt="QuietBook logo" width="180" />
+</p>
+
 # QuietBook
 
 Known investors. Private bids. Verifiable allocation.
