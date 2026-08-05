@@ -188,11 +188,12 @@ export async function createSandboxRound(session: WalletSession, onProgress?: Cr
       return signed;
     },
   };
-  const opened = await client.createAndOpenRound({
-    ...prepared.config,
-    rwaLot: BigInt(prepared.config.rwaLot),
-    reservePublic: BigInt(prepared.config.reservePublic),
-  },
+  const opened = await client.createAndOpenRound(
+    {
+      ...prepared.config,
+      rwaLot: BigInt(prepared.config.rwaLot),
+      reservePublic: BigInt(prepared.config.reservePublic),
+    },
     prepared.config.auditorId,
     xdr.ScVal.fromXDR(prepared.registerDataXdr, "base64"),
     signer,
