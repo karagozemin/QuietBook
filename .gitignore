@@ -1,0 +1,11 @@
+.DS_Store
+target/
+**/test_snapshots/
+node_modules/
+.env
+.env.*
+!.env.example
+docs/evidence/testnet/*
+!docs/evidence/testnet/.gitkeep
+.pdf
+QuietBook_PRD_v1.0.pdf
