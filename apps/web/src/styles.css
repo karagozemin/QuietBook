@@ -121,7 +121,8 @@ code { font-family: "DM Mono", ui-monospace, monospace; }
 .intro-progress span { position: relative; height: 3px; overflow: hidden; background: rgba(255,255,255,.16); border-radius: 2px; }
 .intro-progress span.complete { background: var(--mint); }
 .intro-progress span.active::after { content: ""; position: absolute; inset: 0; background: var(--mint); transform-origin: left; animation: intro-progress 4.5s linear both; }
-.intro-header > button { justify-self: end; }
+.intro-header > .brand-home { justify-self: start; }
+.intro-header > .icon-pressable { justify-self: end; }
 .intro-header .icon-pressable { color: var(--ink); }
 .intro-stage { position: relative; min-height: calc(100svh - 72px); padding: 80px max(24px, calc((100vw - 1480px) / 2)); display: flex; align-items: center; overflow: hidden; animation: page-in 420ms ease both; }
 .intro-slide { animation: intro-slide-in 460ms cubic-bezier(.2,.75,.25,1) both; }

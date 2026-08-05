@@ -12,7 +12,7 @@ function bbBrowserAssets() {
     name: "quietbook-bb-browser-assets",
     configureServer(server: { middlewares: { use: (path: string, handler: (request: { url?: string }, response: { statusCode: number; setHeader: (name: string, value: string) => void }, next: () => void) => void) => void } }) {
       server.middlewares.use("/bb", (request, response, next) => {
-        const relative = (request.url ?? "/").replace(/^\//, "");
+        const relative = (request.url ?? "/").split("?", 1)[0]!.replace(/^\//, "");
         const file = join(bbBrowser, relative);
         try {
           if (!statSync(file).isFile()) return next();

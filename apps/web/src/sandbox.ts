@@ -1,8 +1,11 @@
 import { Address, nativeToScVal, xdr } from "@stellar/stellar-sdk";
+import initAcvm from "@noir-lang/acvm_js";
+import acvmWasmUrl from "@noir-lang/acvm_js/web/acvm_js_bg.wasm?url";
+import initNoircAbi from "@noir-lang/noirc_abi";
+import noircAbiWasmUrl from "@noir-lang/noirc_abi/web/noirc_abi_wasm_bg.wasm?url";
 import {
   addressToField,
   deriveKeys,
-  encodeRegisterData,
   pointFromBytes,
   proverFromArtifact,
   randomScalar,
@@ -12,6 +15,7 @@ import {
   buildAccountBoundRegisterWitness,
   buildRevokeSpenderWitness,
   buildSetSpenderWitness,
+  encodeRegisterData,
   encodeRevokeSpenderData,
   encodeSetSpenderData,
   parseConfidentialAccount,
@@ -70,14 +74,21 @@ type PreparedRound = {
 };
 
 let proverLoaderConfigured = false;
-function configureBrowserProver() {
-  if (proverLoaderConfigured) return;
-  const moduleUrl = "/bb/index.js";
-  setUltraHonkBackendLoader(async () => {
-    const module = await import(/* @vite-ignore */ moduleUrl) as { UltraHonkBackend: never };
-    return module.UltraHonkBackend;
-  });
-  proverLoaderConfigured = true;
+let noirRuntime: Promise<unknown> | null = null;
+async function configureBrowserProver() {
+  if (!proverLoaderConfigured) {
+    const moduleUrl = "/bb/index.js";
+    setUltraHonkBackendLoader(async () => {
+      const module = await import(/* @vite-ignore */ moduleUrl) as { UltraHonkBackend: never };
+      return module.UltraHonkBackend;
+    });
+    proverLoaderConfigured = true;
+  }
+  noirRuntime ??= Promise.all([
+    initAcvm(acvmWasmUrl),
+    initNoircAbi(noircAbiWasmUrl),
+  ]);
+  await noirRuntime;
 }
 
 function storageKey(account: string) {
@@ -131,7 +142,7 @@ export async function initializeConfidentialAccount(session: WalletSession, requ
     return { transaction: "", created: false };
   }
 
-  configureBrowserProver();
+  await configureBrowserProver();
   const secret = randomScalar();
   const keys = deriveKeys(secret, addressToField(TOKEN));
   const witness = buildAccountBoundRegisterWitness(keys, session.address);
@@ -210,7 +221,7 @@ export async function submitSandboxBid(session: WalletSession, round: SandboxRou
     depositReceipts.merge = merged.hash;
   }
 
-  configureBrowserProver();
+  await configureBrowserProver();
   const accountValue = await client.chain.simulate(TOKEN, "confidential_balance", [new Address(round.controller).toScVal()]);
   const controllerAccount = parseConfidentialAccount(accountValue);
   const ownerKeys = deriveKeys(BigInt(local.secret), addressToField(TOKEN));
@@ -280,7 +291,7 @@ export async function reclaimSandboxBid(session: WalletSession, round: SandboxRo
   const local = loadLocal(session.address);
   const delegation = local?.delegations[round.roundId];
   if (!local || !delegation) throw new Error("This browser does not hold the bid opening");
-  configureBrowserProver();
+  await configureBrowserProver();
   const witness = buildRevokeSpenderWitness({
     ownerKeys: deriveKeys(BigInt(local.secret), addressToField(TOKEN)),
     spendableValue: BigInt(local.spendableValue),

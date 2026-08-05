@@ -76,6 +76,12 @@ importers:
       '@ctd/sdk':
         specifier: workspace:*
         version: link:../../.upstream/stellar-confidential-token-demo/packages/sdk
+      '@noir-lang/acvm_js':
+        specifier: 1.0.0-beta.9
+        version: 1.0.0-beta.9
+      '@noir-lang/noirc_abi':
+        specifier: 1.0.0-beta.9
+        version: 1.0.0-beta.9
       '@quietbook/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk

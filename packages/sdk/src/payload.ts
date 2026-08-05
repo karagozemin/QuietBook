@@ -5,6 +5,7 @@ import type {
   SetSpenderWitness,
   SpenderTransferWitness,
 } from "./spender.js";
+import type { QuietBookRegisterWitness } from "./register.js";
 
 const bytes = (value: Uint8Array): xdr.ScVal => nativeToScVal(value, { type: "bytes" });
 
@@ -48,6 +49,16 @@ function escrowedDvk(value: { rX: bigint; cipher: bigint }): xdr.ScVal {
   encoded.set(toBytes32BE(value.rX), 0);
   encoded.set(toBytes32BE(value.cipher), 32);
   return bytes(encoded);
+}
+
+export function encodeRegisterData(witness: QuietBookRegisterWitness, proof: Uint8Array): xdr.ScVal {
+  return envelope(
+    struct({
+      pvk: point(witness.payload.pvk),
+      y: point(witness.payload.y),
+    }),
+    proof,
+  );
 }
 
 export function encodeSetSpenderData(witness: SetSpenderWitness, proof: Uint8Array): xdr.ScVal {

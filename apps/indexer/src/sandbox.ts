@@ -7,7 +7,6 @@ import {
   ChainClient,
   addressToField,
   deriveKeys,
-  encodeRegisterData,
   fromBytesBE,
   keypairSigner,
   proverFromArtifact,
@@ -17,6 +16,7 @@ import {
   buildAccountBoundRegisterWitness,
   buildMaxBidWitness,
   buildSpenderTransferWitness,
+  encodeRegisterData,
   encodeSpenderTransferData,
 } from "@quietbook/sdk";
 import deployment from "../../../docs/evidence/testnet/deployment.json" with { type: "json" };
