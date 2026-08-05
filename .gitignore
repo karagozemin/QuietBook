@@ -5,6 +5,9 @@ node_modules/
 .tools/
 .upstream/
 packages/*/dist/
+apps/web/dist/
+apps/web/playwright-report/
+apps/web/test-results/
 .env
 .env.*
 !.env.example

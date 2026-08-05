@@ -28,12 +28,12 @@ const controllerState = JSON.parse(readFileSync(join(root, ".quietbook/controlle
 const privatePath = join(root, ".quietbook/round-setup-private.json");
 const evidencePath = join(root, "docs/evidence/testnet/round-setup.json");
 const DEPOSIT = 200_000_000n;
-const PRIVATE_BIDS = [100_000_000n, 120_000_000n, 110_000_000n];
 
 type BidderState = {
   account: string;
   identity: string;
   sk: string;
+  privateBid: string;
   transactions: Record<string, string>;
   delegation?: { value: string; randomness: string; dvk: string; sigmaA: string };
 };
@@ -95,6 +95,7 @@ async function main() {
           identity,
           account: stellar(["keys", "public-key", identity]),
           sk: toHex32(randomScalar()),
+          privateBid: (90_000_000n + (randomScalar() % 30_000_000n)).toString(),
           transactions: {},
         };
       }),
@@ -140,7 +141,7 @@ async function main() {
           ownerKeys: keys,
           spendableValue: DEPOSIT,
           spendableRandomness: 0n,
-          allowance: PRIVATE_BIDS[index]!,
+          allowance: BigInt(bidder.privateBid),
           spenderKeys: controllerKeys,
           spenderId: addressToField(controller),
           ownerAuditorKey: kAud,

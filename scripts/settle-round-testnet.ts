@@ -28,7 +28,6 @@ const setupState = JSON.parse(readFileSync(join(root, ".quietbook/round-setup-pr
 const issuerState = JSON.parse(readFileSync(join(root, ".quietbook/testnet-smoke-private.json"), "utf8"));
 const privatePath = join(root, ".quietbook/settlement-private.json");
 const evidencePath = join(root, "docs/evidence/testnet/settlement.json");
-const WINNER_INDEX = 1;
 
 function stellar(args: string[]): string {
   return execFileSync("stellar", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
@@ -56,6 +55,13 @@ async function main() {
   const market = deployment.contracts.market.contractId as string;
   const token = deployment.contracts.confidentialToken.contractId as string;
   const addrF = addressToField(token);
+  const winnerIndex = setupState.bidders.reduce(
+    (winner: number, bidder: { delegation: { value: string } }, index: number) =>
+      BigInt(bidder.delegation.value) > BigInt(setupState.bidders[winner].delegation.value)
+        ? index
+        : winner,
+    0,
+  );
   const client = new ChainClient({
     rpcUrl: deployment.rpcUrl,
     networkPassphrase: Networks.TESTNET,
@@ -88,7 +94,7 @@ async function main() {
 
   const controllerKeys = deriveKeys(BigInt(controllerState.controllerSk), addrF);
   const issuerKeys = deriveKeys(BigInt(issuerState.issuerConfidentialSk), addrF);
-  const winner = setupState.bidders[WINNER_INDEX];
+  const winner = setupState.bidders[winnerIndex];
   const delegation = winner.delegation;
   if (!delegation) throw new Error("winner delegation opening missing from private state");
   const kAud = auditorPoint();
@@ -114,7 +120,7 @@ async function main() {
     const transferData = encodeSpenderTransferData(transferWitness, transferProof.proof);
     const statement = await client.simulate(market, "max_bid_public_inputs", [
       roundIdVal(),
-      xdr.ScVal.scvU32(WINNER_INDEX),
+      xdr.ScVal.scvU32(winnerIndex),
       transferData,
     ]);
     const statementBytes = Buffer.from(statement.bytes());
@@ -131,7 +137,7 @@ async function main() {
       reserve: 80_000_000n,
       payment: transferWitness.paymentOpening,
     });
-    if (maxBidWitness.winnerIndex !== WINNER_INDEX) throw new Error("private winner mismatch");
+    if (maxBidWitness.winnerIndex !== winnerIndex) throw new Error("private winner mismatch");
     const maxBidProof = await maxBidProver.prove(maxBidWitness.inputs);
     const proverStatement = proofPublicInputs(maxBidProof.publicInputs);
     if (!proverStatement.equals(statementBytes)) {
@@ -143,7 +149,7 @@ async function main() {
       "finalize",
       [
         roundIdVal(),
-        xdr.ScVal.scvU32(WINNER_INDEX),
+        xdr.ScVal.scvU32(winnerIndex),
         xdr.ScVal.scvBytes(Buffer.from(maxBidProof.proof)),
         transferData,
       ],
@@ -153,7 +159,7 @@ async function main() {
       generatedAt: new Date().toISOString(),
       roundId: controllerState.roundId,
       winner: winner.account,
-      winnerRegistrationIndex: WINNER_INDEX,
+      winnerRegistrationIndex: winnerIndex,
       closeTransaction: settlementState.closeTransaction,
       finalizeTransaction: finalized.hash,
       explorer: `https://stellar.expert/explorer/testnet/tx/${finalized.hash}`,
