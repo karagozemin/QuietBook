@@ -9,6 +9,7 @@ test("verified judge flow remains usable", async ({ page }) => {
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /QBNOTE-26/ })).toBeVisible();
+  await expect(page.getByText("Live RPC verified", { exact: true })).toBeVisible({ timeout: 12_000 });
 
   const dimensions = await page.evaluate(() => ({
     client: document.documentElement.clientWidth,
@@ -37,9 +38,20 @@ test("verified judge flow remains usable", async ({ page }) => {
 
   await page.locator(".main-nav").getByRole("button", { name: "Evidence" }).click();
   await expect(page.getByRole("heading", { name: "Verification index" })).toBeVisible();
+  await expect(page.getByText("Settlement receipt confirmed", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Contracts" }).click();
   await expect(page.getByRole("heading", { name: "Contract registry" })).toBeVisible();
   await page.getByRole("button", { name: "Live round" }).click();
 
   expect(browserErrors).toEqual([]);
+});
+
+test("falls back to recorded evidence when public RPC is unavailable", async ({ page }) => {
+  await page.route("https://soroban-testnet.stellar.org/**", (route) => route.abort());
+  await page.goto("/");
+  await expect(page.getByText("Evidence fallback active", { exact: true })).toBeVisible({
+    timeout: 12_000,
+  });
+  await page.locator(".main-nav").getByRole("button", { name: "Evidence" }).click();
+  await expect(page.getByText(/Recorded Testnet evidence remains active/)).toBeVisible();
 });

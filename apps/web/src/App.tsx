@@ -30,7 +30,7 @@ import {
   X,
 } from "lucide-react";
 import QRCode from "qrcode";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   compact,
@@ -39,9 +39,14 @@ import {
   participants,
   testnetEvidence,
 } from "./evidence";
+import type { LiveSnapshot } from "./live";
 
 type Page = "round" | "evidence" | "contracts";
 type Role = "public" | "issuer" | "investor" | "auditor";
+type LiveState =
+  | { status: "checking" }
+  | { status: "verified" | "mismatch"; snapshot: LiveSnapshot }
+  | { status: "fallback"; error: string };
 
 type DemoStep = {
   label: string;
@@ -128,6 +133,41 @@ function AppHeader({ page, setPage }: { page: Page; setPage: (page: Page) => voi
         Stellar Testnet
       </div>
     </header>
+  );
+}
+
+function LiveVerificationBar({ state, refresh }: { state: LiveState; refresh: () => void }) {
+  const verified = state.status === "verified";
+  const mismatch = state.status === "mismatch";
+  const title = state.status === "checking"
+    ? "Checking Testnet"
+    : verified
+      ? "Live RPC verified"
+      : mismatch
+        ? "Live mismatch detected"
+        : "Evidence fallback active";
+  const detail = state.status === "checking"
+    ? "Reading market, controller and settlement state"
+    : state.status === "fallback"
+      ? "Public RPC unavailable · verified replay remains available"
+      : `${state.snapshot.matchedCount}/${state.snapshot.checks.length} checks matched · ledger ${state.snapshot.latestLedger.toLocaleString()}`;
+
+  return (
+    <div className={`live-verification ${state.status}`} role="status" title={state.status === "fallback" ? state.error : undefined}>
+      <div className="live-verification-inner">
+        <div className="live-verification-copy">
+          <span className="live-icon" aria-hidden="true">
+            {state.status === "checking" ? <Activity size={15}/> : verified ? <BadgeCheck size={15}/> : <Clock3 size={15}/>}
+          </span>
+          <div><strong>{title}</strong><span>{detail}</span></div>
+        </div>
+        {state.status !== "checking" && (
+          <button type="button" className="live-refresh" onClick={refresh} aria-label="Refresh live verification" title="Refresh live verification">
+            <RefreshCw size={15}/>
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -322,7 +362,26 @@ function StateRow({ label, value, good, hidden }: { label: string; value: string
   return <div className="state-row"><span>{label}</span><strong className={good ? "good" : hidden ? "hidden" : ""}>{good && <Check size={14}/>} {hidden && <EyeOff size={14}/>} {value}</strong></div>;
 }
 
-function EvidencePage({ onEvidence }: { onEvidence: () => void }) {
+function LiveCheckPanel({ state }: { state: LiveState }) {
+  if (state.status === "checking") {
+    return <section className="live-check-panel pending"><Activity size={17}/><span>Reading live contract state...</span></section>;
+  }
+  if (state.status === "fallback") {
+    return <section className="live-check-panel fallback"><Clock3 size={17}/><span>Live RPC unavailable. Recorded Testnet evidence remains active.</span></section>;
+  }
+  return (
+    <section className={`live-check-panel ${state.status}`} aria-label="Live Testnet checks">
+      {state.snapshot.checks.map((check) => (
+        <div className={check.matched ? "matched" : "failed"} key={check.label}>
+          {check.matched ? <Check size={14}/> : <X size={14}/>}
+          <span>{check.label}</span>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function EvidencePage({ onEvidence, live }: { onEvidence: () => void; live: LiveState }) {
   const checks = [
     ["Account-bound registration", testnetEvidence.deployment.verificationKeys.register.transactionHash, "Verified"],
     ["Controller contract authorization", testnetEvidence.controller.controllerRegistrationTransaction, "Verified"],
@@ -333,6 +392,7 @@ function EvidencePage({ onEvidence }: { onEvidence: () => void }) {
   return (
     <main className="page-shell">
       <section className="page-title"><div><span className="role-banner">REVIEWER EVIDENCE</span><h1>Verification index</h1><p>Claims mapped to the completed Testnet run.</p></div><button className="primary-button" type="button" onClick={onEvidence}><PanelRightOpen size={17}/> Open receipt</button></section>
+      <LiveCheckPanel state={live}/>
       <section className="evidence-ledger-band"><div><span>Ledger range</span><strong>{testnetEvidence.deployment.ledgerRange.start.toLocaleString()}–{testnetEvidence.deployment.ledgerRange.end.toLocaleString()}</strong></div><div><span>Final proof hash</span><strong>{compact(testnetEvidence.settlement.maxBidProof.sha256, 12, 10)}</strong></div><div><span>Network</span><strong>Stellar Testnet</strong></div></section>
       <section className="data-section evidence-table-section"><div className="section-heading"><div><div className="section-kicker">APPEND-ONLY RECORD</div><h2>Claim verification</h2></div><BadgeCheck size={22} className="green-icon"/></div><div className="check-list">{checks.map(([label, reference, result], index) => <a href={index === 2 ? undefined : explorerTransaction(reference)} target="_blank" rel="noreferrer" className="check-row" key={label}><span className={`check-icon ${index === 2 ? "denied" : ""}`}>{index === 2 ? <Ban size={16}/> : <Check size={16}/>}</span><div><strong>{label}</strong><span>{compact(reference, 10, 8)}</span></div><b>{result}</b>{index !== 2 && <ArrowUpRight size={15}/>}</a>)}</div></section>
       <ProofFingerprint />
@@ -375,6 +435,23 @@ export function App() {
   const [stage, setStage] = useState<number>(demoSteps.length);
   const [running, setRunning] = useState(false);
   const [drawer, setDrawer] = useState(false);
+  const [live, setLive] = useState<LiveState>({ status: "checking" });
+
+  const refreshLive = useCallback(() => {
+    setLive({ status: "checking" });
+    const timeout = new Promise<never>((_, reject) => {
+      window.setTimeout(() => reject(new Error("Testnet verification timed out")), 10_000);
+    });
+    const verification = import("./live").then(({ verifyLiveTestnet }) => verifyLiveTestnet());
+    void Promise.race([verification, timeout])
+      .then((snapshot) => setLive({ status: snapshot.allMatched ? "verified" : "mismatch", snapshot }))
+      .catch((error: unknown) => setLive({
+        status: "fallback",
+        error: error instanceof Error ? error.message : "Testnet verification failed",
+      }));
+  }, []);
+
+  useEffect(() => refreshLive(), [refreshLive]);
 
   useEffect(() => {
     if (!running) return;
@@ -395,8 +472,9 @@ export function App() {
   return (
     <div className="app-frame">
       <AppHeader page={page} setPage={setPage}/>
+      <LiveVerificationBar state={live} refresh={refreshLive}/>
       {page === "round" && <main className="page-shell"><RoundHeader onEvidence={() => setDrawer(true)}/><Metrics/><JudgeReplay stage={stage} running={running} onRun={runReplay} onStop={() => setRunning(false)}/><div className="main-grid"><ParticipantsTable/><RolePanel role={role} setRole={setRole}/></div></main>}
-      {page === "evidence" && <EvidencePage onEvidence={() => setDrawer(true)}/>} 
+      {page === "evidence" && <EvidencePage onEvidence={() => setDrawer(true)} live={live}/>}
       {page === "contracts" && <ContractsPage/>}
       <EvidenceDrawer open={drawer} onClose={() => setDrawer(false)}/>
       <footer><span>QuietBook · Stellar Testnet · Unaudited prototype</span><a href={testnetEvidence.settlement.explorer} target="_blank" rel="noreferrer"><Link2 size={14}/> Evidence receipt</a></footer>
