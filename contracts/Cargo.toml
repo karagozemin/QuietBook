@@ -1,6 +1,15 @@
 [workspace]
 resolver = "2"
-members = ["market", "max-bid-verifier", "round-controller"]
+members = [
+    "confidential-auditor",
+    "confidential-token",
+    "confidential-verifier",
+    "demo-rwa-token",
+    "eligibility-policy",
+    "market",
+    "max-bid-verifier",
+    "round-controller",
+]
 
 [workspace.package]
 edition = "2021"

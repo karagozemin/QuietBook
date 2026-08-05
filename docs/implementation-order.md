@@ -38,8 +38,8 @@ Local exit condition: complete. Testnet reproduction remains part of the evidenc
 
 ## 5. P0 evidence, then P1 product
 
-- [ ] Archive one local and one Testnet end-to-end run.
-- [ ] Create a reviewer evidence index before making public claims.
+- [x] Archive one local and one Testnet end-to-end run.
+- [x] Create a reviewer evidence index before making public claims.
 - Build the judge flow, issuer/investor/public views, and blocked unauthorized path.
 - Add the auditor split view, then recipient-bound disclosure.
 

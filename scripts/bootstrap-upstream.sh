@@ -51,12 +51,21 @@ fi
 "$NARGO_BIN" --version
 (
   cd "$OZ_DIR/packages/tokens/src/confidential/circuits"
+  "$NARGO_BIN" compile --package circuit_register
+  "$NARGO_BIN" compile --package circuit_withdraw
+  "$NARGO_BIN" compile --package circuit_transfer
   "$NARGO_BIN" compile --package circuit_set_spender
   "$NARGO_BIN" compile --package circuit_spender_transfer
   "$NARGO_BIN" compile --package circuit_revoke_spender
 )
 
 mkdir -p "$ROOT_DIR/packages/sdk/circuits"
+cp "$OZ_DIR/packages/tokens/src/confidential/circuits/target/circuit_register.json" \
+  "$ROOT_DIR/packages/sdk/circuits/register.json"
+cp "$OZ_DIR/packages/tokens/src/confidential/circuits/target/circuit_withdraw.json" \
+  "$ROOT_DIR/packages/sdk/circuits/withdraw.json"
+cp "$OZ_DIR/packages/tokens/src/confidential/circuits/target/circuit_transfer.json" \
+  "$ROOT_DIR/packages/sdk/circuits/transfer.json"
 cp "$OZ_DIR/packages/tokens/src/confidential/circuits/target/circuit_set_spender.json" \
   "$ROOT_DIR/packages/sdk/circuits/set_spender.json"
 cp "$OZ_DIR/packages/tokens/src/confidential/circuits/target/circuit_spender_transfer.json" \

@@ -1,0 +1,145 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-05T13:04:47.746Z",
+  "network": "testnet",
+  "rpcUrl": "https://soroban-testnet.stellar.org",
+  "networkPassphrase": "Test SDF Network ; September 2015",
+  "revisions": {
+    "stellarContracts": "98090b3e59785454f55b3617992c2f84250c7173",
+    "confidentialTokenDemo": "9500ed774b13b08b5fe99370b60de3479edb492b",
+    "ultraHonk": "5e9b4d995ec43ed1953cf89cfd738df6471e4b93",
+    "noir": "1.0.0-beta.9",
+    "barretenberg": "0.87.0"
+  },
+  "ledgerRange": {
+    "start": 3982970,
+    "end": 3983002
+  },
+  "roles": {
+    "deployer": "GDNSCJKRH3I34IS7QVHYX7N75SYFDM5ZFGIBJNQ5WEG5G576POF7FWTW",
+    "issuer": "GBHVBRLPPE3ZI46E2L5UQAAAGJN33EIUQQPL2UATPUU52HZTJNXUX4W5",
+    "operator": "GC7C63B5PVQCYNJHGVY6KOZMBWLCXIRQE5AFM7YOZZZS6CH7PGK44EQT",
+    "auditor": "GBDVJYK5IH23T22CV5P5OSFLNTE3PE5JD5445F3JKRVTJDDUBC2ZMWY2",
+    "bidder1": "GCT7CLVOOIPU5GW6JTISXLJ5V6G2737OD4RUVMFI6PVHJCSIKNSCUNSJ",
+    "bidder2": "GCC5XVPGK76BIX34X2JI6GQJCKS2VCY6RAYBZW7SFIWYHL667A67P4J2",
+    "bidder3": "GBY3FYL6ASUGW6GJISPPH272BQMNPK76WLJVZ5OBPOIWTXQGWJ5LDRGV",
+    "rejected": "GAYYDHZRES3CXJYE64CYKA4QWZSYMFXEDVYAA4NWMUOG6ATNBEV5YIMB"
+  },
+  "contracts": {
+    "confidentialVerifier": {
+      "contractId": "CCPAIODXHOC25EGCC6PSYM3FHJW237VEYM4NV4RKVRZZ7OOA5J3QJUEV",
+      "transactionHashes": [
+        "2f28970343ccdf49ea0a2e5505cc367ec69888a21d312a7ec8106c449063916b",
+        "759b2e950811599b631622d70dd58368ea9f2c53f3e064a7cfb77390d0b7dada"
+      ],
+      "wasmSha256": "eaf855eef79577375021c7ffdb4b9ae92eff4e6df6cb5014d9babe64f08d7745",
+      "explorer": "https://stellar.expert/explorer/testnet/contract/CCPAIODXHOC25EGCC6PSYM3FHJW237VEYM4NV4RKVRZZ7OOA5J3QJUEV"
+    },
+    "confidentialAuditor": {
+      "contractId": "CAWRW5FHNEP5YETTIVASJUCNYTMQMLXKGY7KGK3YALLRO6YF2ZBLU6ZI",
+      "transactionHashes": [
+        "a8127a287cb1e5b5b492f1a9d7afa9bb39cf9f6785c5ce3143702274d9d0ecb7",
+        "891da9981f95481c18d9c6731bb9ee1c03b126b158a158d8962d6340a46813c0"
+      ],
+      "wasmSha256": "d65f0aca8c60eee77565d311a883109fa10f91f2862dff8389cfe6b4557f1b9f",
+      "explorer": "https://stellar.expert/explorer/testnet/contract/CAWRW5FHNEP5YETTIVASJUCNYTMQMLXKGY7KGK3YALLRO6YF2ZBLU6ZI"
+    },
+    "confidentialToken": {
+      "contractId": "CDJSIHTYZMUFLLMPWRC6QZKG5PWDKMB3A2RNH73PZUKMXPBDBG5IZ7KT",
+      "transactionHashes": [
+        "443375620bb4ecf910bd1984500c8c4063511090d720e9cee81ffeabab34558f",
+        "6ea3dbe1f6831b706e5ad286765d53ca7a552a4c6bbba59954a3178611f94439"
+      ],
+      "wasmSha256": "90b382c7e77bfd32d0bca5c576d577f380b48a95713b76233c8c744c3351ac36",
+      "explorer": "https://stellar.expert/explorer/testnet/contract/CDJSIHTYZMUFLLMPWRC6QZKG5PWDKMB3A2RNH73PZUKMXPBDBG5IZ7KT"
+    },
+    "maxBidVerifier": {
+      "contractId": "CD6K5I2HDVOLDCIVPSPXZVHKKRD3IWM47CLVTSLCHNNQRLFKC2DYWPYC",
+      "transactionHashes": [
+        "6049824c45675e7829bb0c7edeb1359e061b62f492b89e0f5f9cdd0a5ceff06b"
+      ],
+      "wasmSha256": "aed33bcf69e8414e9969d1bd2c1587874c66084e83b3c310dc17ee4aedb4e068",
+      "explorer": "https://stellar.expert/explorer/testnet/contract/CD6K5I2HDVOLDCIVPSPXZVHKKRD3IWM47CLVTSLCHNNQRLFKC2DYWPYC"
+    },
+    "eligibilityPolicy": {
+      "contractId": "CAN6FH2IQ233FGDGT4W5UYVMJJCL4R4HSTTWUSU47O6D7DCRGSRHC27J",
+      "transactionHashes": [
+        "92c4a9619aafa5a89ef5ed2c81fcda5e5ce787d2410ba10ec8504efcc2516530",
+        "6aff57888274b407c3cb679601ff7b04b8f21893b5aca201611f0919207a9321"
+      ],
+      "wasmSha256": "0a64d4a9aabbffac1ee81c9af8f826be8ba58c875f061ca11c02d7b9c968f26d",
+      "explorer": "https://stellar.expert/explorer/testnet/contract/CAN6FH2IQ233FGDGT4W5UYVMJJCL4R4HSTTWUSU47O6D7DCRGSRHC27J"
+    },
+    "rwaToken": {
+      "contractId": "CDOQ2UNEMD2QIFLJW4XEK2OC2RVFTSXW7IMUZPAFCOWQJSLY3CYX7E76",
+      "transactionHashes": [
+        "31188491d3256f699e270dbcd59da156eb047bb7a67bc355df9760e09707f5f3",
+        "426676bf2253e142bad06d0065134c505582d33c5c262b34b26f36def978a956"
+      ],
+      "wasmSha256": "6b7b741758b5561a10fa31a614bb08277fd4312a11af66f6b45e052bf0cd7b1d",
+      "explorer": "https://stellar.expert/explorer/testnet/contract/CDOQ2UNEMD2QIFLJW4XEK2OC2RVFTSXW7IMUZPAFCOWQJSLY3CYX7E76"
+    },
+    "market": {
+      "contractId": "CDZTPSH6P7W2KTUCURCPEFMVJEUPV26GMI46J3YBAXSC5DHLMJ5JOQTX",
+      "transactionHashes": [
+        "21c6e816589dd2b66a3bb381ef2806a1875b1553d29e7ec8f1bc9463d69a0e9e",
+        "acd18eda9e808bf3ad630f4d20406fb1fa141d7b9df8b4189b10a83a6df08b21"
+      ],
+      "wasmSha256": "a441fafbb80e6f7b08013b13beb09f4567e3ee56f905e00adf334ca10cc06004",
+      "explorer": "https://stellar.expert/explorer/testnet/contract/CDZTPSH6P7W2KTUCURCPEFMVJEUPV26GMI46J3YBAXSC5DHLMJ5JOQTX"
+    }
+  },
+  "supersededContracts": {
+    "marketWithoutControllerRegistration": {
+      "contractId": "CCNRJ5OFV2V2O2OMOKRNXGEWNDP3PAUZL4HVBIVUT74TLGYT4XWKTNAY",
+      "transactionHashes": [
+        "2710787786faed36c0a3934f187a45edaedff11d91a3194840de82e4a787a23e",
+        "44a8de8cc3e110c931ca48865b3553401a5464efebdf720121904e3babdff121"
+      ],
+      "wasmSha256": "f853cf448c60d81ebaadd7f499f71c76045450c58be06308bf40d0062020e15b",
+      "reason": "Missing market entrypoint for contract-authenticated controller registration"
+    }
+  },
+  "underlying": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+  "verificationKeys": {
+    "register": {
+      "sha256": "e01ba8729578e9ec4ea982801e2d806028246eeafe1a2e551e1f9cdef69a7268",
+      "transactionHash": "f423a8a4a2436830fbe40aa982d7eb10539ffcae1c12472618de1b00a5b7099a"
+    },
+    "withdraw": {
+      "sha256": "d800122c23d7216ead4f3d7c70c84fd39db37d4f7743659b7d6bf05674ce5c09",
+      "transactionHash": "d8819db76e3e714401d91042a1b4d4b065124f544a14912552556f06e7b3d847"
+    },
+    "transfer": {
+      "sha256": "b9c6d437368efc5343d33be20b3455840b0b66ae7ad430bebc75c93a172b173c",
+      "transactionHash": "90ba6aa5cce489ae02f30810f8514ab5a853dd363a4efa497980e18f7edb6aab"
+    },
+    "spender_transfer": {
+      "sha256": "2366fbe28a033e3adaa2fc61e508c300a5e31dce9f73e03692b678f801182038",
+      "transactionHash": "191cb3705be8cf84cfcaae32e5086a5198a1c81510783edcc980af0d993b4b83"
+    },
+    "set_spender": {
+      "sha256": "0cc48b122d7895fae17570c299c80ddc2f2f0c4c3750ab798a887cf3411df7fb",
+      "transactionHash": "6e837cfdd52ad8d7f2c7cbb2c3f12547dc595d760f95f38bcddda2828099132e"
+    },
+    "revoke_spender": {
+      "sha256": "ce95f994dbcefa4d3d89bc7c7abc12b373c780a16b1e166fad46ba05dcf17660",
+      "transactionHash": "3ae3f7f6c8137046c2186cc568d743de3f1c01e6d53807ab391fdb56b1b9a78c"
+    }
+  },
+  "maxBidVerificationKey": {
+    "sha256": "69e98849f32f2f5c3f2d85ae4d0c9e10d7cc0031b0fe37032b1c36a637707502"
+  },
+  "auditor": {
+    "id": 0,
+    "publicKey": {
+      "x": "0x0ab5a4dad0ae339f5d601e4478725f498b7f7eb88d78621b8630994804bbcf9a",
+      "y": "0x16096841cfbdc0e029f1fe1fe8efe3efdd541ad0c90fdf83d7bd0834f1cc2943"
+    },
+    "registrationTransactionHash": "30d2a30ce66e9eb2f5377ad0b8e68533a87edcebad007f08e1c5e3f5e67a4eda"
+  },
+  "limitations": [
+    "Unaudited Testnet-only prototype",
+    "No production or mainnet value"
+  ]
+}

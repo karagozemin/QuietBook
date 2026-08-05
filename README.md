@@ -20,7 +20,7 @@ The repository is being built in the dependency order defined by the PRD. The lo
 - trusted on-chain public-input construction and atomic confidential-payment/public-RWA finalization;
 - rollback protection for invalid proofs, revoked delegations, invalid winners, and duplicate settlement.
 
-The next core milestone is a complete Testnet evidence run. The web app follows that evidence gate. No production or mainnet use is supported.
+The core P0 flow has also completed on Stellar Testnet: three eligible investors registered confidential bids, an unauthorized investor was rejected, the market-built statement matched the Max-Bid proof statement byte-for-byte, and confidential payment plus public RWA delivery settled atomically. The next milestone is the judge-first web app. No production or mainnet use is supported.
 
 ## Development
 
@@ -58,4 +58,4 @@ Build the contracts for Wasm:
 stellar contract build --manifest-path contracts/Cargo.toml
 ```
 
-See [docs/implementation-order.md](docs/implementation-order.md) for the build sequence and [docs/architecture/0001-p0-integration-spike.md](docs/architecture/0001-p0-integration-spike.md) for the initial integration findings.
+See [docs/implementation-order.md](docs/implementation-order.md) for the build sequence, [docs/architecture/0001-p0-integration-spike.md](docs/architecture/0001-p0-integration-spike.md) for the integration findings, and [docs/evidence/README.md](docs/evidence/README.md) for the Testnet evidence index.

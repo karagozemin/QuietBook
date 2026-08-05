@@ -11,6 +11,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:confidential-keys": "tsx scripts/build-confidential-keys.ts",
     "build:max-bid-key": "tsx scripts/build-max-bid.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx test/spender.test.ts",

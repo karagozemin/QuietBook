@@ -70,6 +70,7 @@ impl MockController {
         e.storage().instance().set(&1u32, &token);
         e.storage().instance().set(&2u32, &issuer);
         e.storage().instance().set(&3u32, &deadline);
+        e.storage().instance().set(&7u32, &false);
     }
 
     pub fn configuration(e: Env) -> (Address, Address, Address, u32, bool) {
@@ -78,8 +79,13 @@ impl MockController {
             e.storage().instance().get(&1u32).unwrap(),
             e.storage().instance().get(&2u32).unwrap(),
             e.storage().instance().get(&3u32).unwrap(),
-            true,
+            e.storage().instance().get(&7u32).unwrap_or(false),
         )
+    }
+
+    pub fn register(e: Env, _auditor_id: u32, register_data: Bytes) {
+        e.storage().instance().set(&7u32, &true);
+        e.storage().instance().set(&8u32, &register_data);
     }
 
     pub fn settle(e: Env, from: Address, spender_transfer_data: Bytes) {
@@ -217,6 +223,7 @@ fn funded_open_round(h: &Harness<'_>) -> BytesN<32> {
     h.rwa.mint(&h.issuer, &1_000);
     let id = h.market.create_round(&config(h));
     h.market.fund_round(&id);
+    h.market.register_controller(&id, &1, &Bytes::new(&h.e));
     h.market.open_round(&id);
     id
 }
@@ -403,6 +410,10 @@ fn controller_configuration_mismatch_blocks_opening() {
     let id = h.market.create_round(&bad_config);
     h.market.fund_round(&id);
 
+    assert!(h
+        .market
+        .try_register_controller(&id, &1, &Bytes::new(&h.e))
+        .is_err());
     assert!(h.market.try_open_round(&id).is_err());
     assert_eq!(h.market.get_round(&id).status, RoundStatus::Draft);
 }

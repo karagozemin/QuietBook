@@ -8,7 +8,13 @@ packages/*/dist/
 .env
 .env.*
 !.env.example
+.quietbook/
 docs/evidence/testnet/*
 !docs/evidence/testnet/.gitkeep
+!docs/evidence/testnet/deployment.json
+!docs/evidence/testnet/register-smoke.json
+!docs/evidence/testnet/controller-smoke.json
+!docs/evidence/testnet/round-setup.json
+!docs/evidence/testnet/settlement.json
 .pdf
 QuietBook_PRD_v1.0.pdf

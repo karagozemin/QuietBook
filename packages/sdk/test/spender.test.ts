@@ -1,9 +1,24 @@
 import assert from "node:assert/strict";
 import { xdr } from "@stellar/stellar-sdk";
-import { encodeSetSpenderData, encodeSpenderTransferData } from "../src/index.js";
+import { deriveKeys } from "@ctd/sdk";
+import {
+  buildAccountBoundRegisterWitness,
+  encodeSetSpenderData,
+  encodeSpenderTransferData,
+} from "../src/index.js";
 import { buildFixture } from "./fixtures.js";
 
 const fixture = buildFixture();
+const registerKeys = deriveKeys(123n, 456n);
+const registerA = buildAccountBoundRegisterWitness(
+  registerKeys,
+  "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+);
+const registerB = buildAccountBoundRegisterWitness(
+  registerKeys,
+  "GBZXN7PIRZGNMHGAIJWZXFZKSGJH3VLMQD4C3L2KJ3I4P4J6QPPN5MG5",
+);
+assert.notEqual(registerA.inputs._acct_f, registerB.inputs._acct_f);
 
 assert.equal(fixture.setSpender.delegation.value, 10_100n);
 assert.equal(fixture.setSpender.nextSpendable.value, 9_900n);

@@ -2,14 +2,25 @@
   "name": "quietbook",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "packageManager": "pnpm@10.33.0",
   "engines": {
     "node": ">=20"
   },
+  "dependencies": {
+    "@ctd/sdk": "workspace:*",
+    "@stellar/stellar-sdk": "^14.2.0"
+  },
   "scripts": {
     "bootstrap": "bash scripts/bootstrap-upstream.sh",
     "build:sdk": "pnpm --filter @ctd/sdk build && pnpm --filter @quietbook/sdk build",
+    "build:confidential-keys": "pnpm --filter @quietbook/sdk build:confidential-keys",
     "build:max-bid-key": "pnpm --filter @quietbook/sdk build:max-bid-key",
+    "deploy:testnet": "pnpm --filter @quietbook/sdk exec tsx ../../scripts/deploy-testnet.ts",
+    "smoke:testnet": "pnpm --filter @quietbook/sdk exec tsx ../../scripts/smoke-testnet.ts",
+    "smoke:controller:testnet": "pnpm --filter @quietbook/sdk exec tsx ../../scripts/smoke-controller-testnet.ts",
+    "setup:round:testnet": "pnpm --filter @quietbook/sdk exec tsx ../../scripts/setup-round-testnet.ts",
+    "settle:round:testnet": "pnpm --filter @quietbook/sdk exec tsx ../../scripts/settle-round-testnet.ts",
     "test": "pnpm test:contracts && pnpm build:sdk && pnpm test:sdk",
     "test:contracts": "cargo test --manifest-path contracts/Cargo.toml",
     "test:sdk": "pnpm --filter @quietbook/sdk test",

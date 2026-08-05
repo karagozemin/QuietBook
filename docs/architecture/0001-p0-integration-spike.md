@@ -31,4 +31,4 @@ The fixed `N=3` Max-Bid circuit binds the round domain, ordered live allowance c
 
 The market constructs those public inputs from trusted round and confidential-token state, calls the verifier cross-contract, invokes controller settlement, and releases the public RWA lot atomically. Tests cover successful settlement and rollback on invalid proof, invalid winner, revoked delegation, controller mismatch, and replay. All three contracts build for `wasm32v1-none`.
 
-The remaining P0 evidence item is to reproduce the full flow on Stellar Testnet and archive transaction and event references before UI work or public claims.
+The full flow was reproduced on Stellar Testnet with pinned Wasm and verification-key hashes. Three eligible bidders completed current account-bound registration, deposits, merges, spender delegation, and market registration; one unauthorized account was rejected. The market statement matched the generated Max-Bid proof public inputs byte-for-byte, and the final invocation atomically completed confidential payment and public RWA delivery. Transaction references and read-back results are indexed in `docs/evidence/README.md`.

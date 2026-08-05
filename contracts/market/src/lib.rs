@@ -189,6 +189,7 @@ pub trait EligibilityPolicy {
 #[contractclient(name = "RoundControllerClient")]
 pub trait RoundControllerInterface {
     fn configuration(e: Env) -> (Address, Address, Address, u32, bool);
+    fn register(e: Env, auditor_id: u32, register_data: Bytes);
     fn settle(e: Env, from: Address, spender_transfer_data: Bytes);
 }
 
@@ -283,14 +284,7 @@ impl QuietBookMarket {
         {
             panic_with(&e, MarketError::RwaEscrowInsufficient);
         }
-        let controller = RoundControllerClient::new(&e, &round.config.controller);
-        let (market, token, issuer, deadline, registered) = controller.configuration();
-        if market != e.current_contract_address()
-            || token != round.config.confidential_token
-            || issuer != round.config.issuer
-            || deadline != round.config.settlement_deadline_ledger
-            || !registered
-        {
+        if !controller_configuration_matches(&e, &round, true) {
             panic_with(&e, MarketError::ControllerConfigurationMismatch);
         }
         round.status = RoundStatus::Open;
@@ -300,6 +294,25 @@ impl QuietBookMarket {
         }
         .publish(&e);
         save_round(&e, &round);
+    }
+
+    pub fn register_controller(
+        e: Env,
+        round_id: BytesN<32>,
+        auditor_id: u32,
+        register_data: Bytes,
+    ) {
+        let round = load_round(&e, &round_id);
+        round.config.issuer.require_auth();
+        require_status(&e, &round, RoundStatus::Draft, MarketError::RoundNotDraft);
+        if !controller_configuration_matches(&e, &round, false) {
+            panic_with(&e, MarketError::ControllerConfigurationMismatch);
+        }
+        RoundControllerClient::new(&e, &round.config.controller)
+            .register(&auditor_id, &register_data);
+        if !controller_configuration_matches(&e, &round, true) {
+            panic_with(&e, MarketError::ControllerConfigurationMismatch);
+        }
     }
 
     pub fn register_bid(e: Env, round_id: BytesN<32>, bidder: Address) {
@@ -535,6 +548,16 @@ fn validate_config(e: &Env, config: &RoundConfig) {
     {
         panic_with(e, MarketError::InvalidRoundConfig);
     }
+}
+
+fn controller_configuration_matches(e: &Env, round: &Round, expected_registered: bool) -> bool {
+    let controller = RoundControllerClient::new(e, &round.config.controller);
+    let (market, token, issuer, deadline, registered) = controller.configuration();
+    market == e.current_contract_address()
+        && token == round.config.confidential_token
+        && issuer == round.config.issuer
+        && deadline == round.config.settlement_deadline_ledger
+        && registered == expected_registered
 }
 
 fn load_round(e: &Env, id: &BytesN<32>) -> Round {

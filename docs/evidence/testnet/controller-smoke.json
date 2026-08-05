@@ -1,0 +1,16 @@
+{
+  "generatedAt": "2026-08-05T13:13:15.977Z",
+  "market": "CDZTPSH6P7W2KTUCURCPEFMVJEUPV26GMI46J3YBAXSC5DHLMJ5JOQTX",
+  "controller": "CAWJBVFGNPQQWQ2PJAQ77BQMGUUE24NMIIKTAJ6ADEKODHS2WIIXRSMB",
+  "roundId": "65b6573282e6f4973ffc3623c4509f7186ed777f2020e0ca59c3e7b6120abbc6",
+  "bidDeadline": 3983195,
+  "settlementDeadline": 3983375,
+  "controllerDeploymentTransactions": [
+    "293dd1ba6e4386858ab39dfee7f9418590741884bdde1588444197382c27d9b8",
+    "e311018a0bfc7b4a6a00977255184e44524a16152b100bd278a6f01b307d7f04"
+  ],
+  "roundCreationTransaction": "43f0888c976d83ded0f0206c69f00c3af61790c58420c1e2036376446e3f7a14",
+  "controllerRegistrationTransaction": "c9ad554dd5ee0acff745b88f2b66a45f9c057b891bfc338a92c05956f98850fc",
+  "registerProofSha256": "ec98ef1ca5619a8d6ae66ad832b9547db0a7cd4ac5a0e7d34ed8dc42d7629dda",
+  "registerCircuitArtifactSha256": "dff9ecf479259c2872045ac1f5b8941d4092df753cb01cc0cccd22543ff1fa62"
+}

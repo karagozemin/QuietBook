@@ -6,7 +6,14 @@ settings:
 
 importers:
 
-  .: {}
+  .:
+    dependencies:
+      '@ctd/sdk':
+        specifier: workspace:*
+        version: link:.upstream/stellar-confidential-token-demo/packages/sdk
+      '@stellar/stellar-sdk':
+        specifier: ^14.2.0
+        version: 14.6.1
 
   .upstream/stellar-confidential-token-demo/packages/sdk:
     dependencies:

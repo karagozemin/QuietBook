@@ -1,0 +1,27 @@
+{
+  "generatedAt": "2026-08-05T13:23:16.040Z",
+  "roundId": "65b6573282e6f4973ffc3623c4509f7186ed777f2020e0ca59c3e7b6120abbc6",
+  "winner": "GCC5XVPGK76BIX34X2JI6GQJCKS2VCY6RAYBZW7SFIWYHL667A67P4J2",
+  "winnerRegistrationIndex": 1,
+  "closeTransaction": "c605b49cd01abdb07777dd32c016af4ace8262b1655cc5e3f3b4e4851d2bf6d2",
+  "finalizeTransaction": "3a47b09ea1def84f1bef4bb71a00fab2080cfb5e5697a84d86c549a97f89246d",
+  "explorer": "https://stellar.expert/explorer/testnet/tx/3a47b09ea1def84f1bef4bb71a00fab2080cfb5e5697a84d86c549a97f89246d",
+  "maxBidProof": {
+    "bytes": 14592,
+    "sha256": "b095a15e3280908784282a9243a7dfcdd4c8e3f1f44a1648a0d8ab635206bf33",
+    "publicInputBytes": 448,
+    "marketStatementMatched": true
+  },
+  "spenderTransferProof": {
+    "bytes": 14592,
+    "sha256": "04a168a9ea7785f6316801859171891ab21e2105586c3dc1d7d533a73d58fda0"
+  },
+  "readBack": {
+    "roundStatus": "Settled",
+    "winnerMatches": true,
+    "proofHashMatchesMaxBidProof": true,
+    "controllerRegistered": true,
+    "winnerRwaBalance": "10000000"
+  },
+  "privacyNote": "No bid value, allowance opening, or confidential key is included."
+}

@@ -1,0 +1,6 @@
+{
+  "circuit": "circuit_revoke_spender",
+  "transcript": "keccak",
+  "bytes": 1760,
+  "sha256": "ce95f994dbcefa4d3d89bc7c7abc12b373c780a16b1e166fad46ba05dcf17660"
+}
