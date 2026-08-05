@@ -234,6 +234,25 @@ fn funded_open_round(h: &Harness<'_>) -> BytesN<32> {
 }
 
 #[test]
+fn create_and_open_round_preserves_the_full_opening_invariants() {
+    let h = setup();
+    h.rwa.mint(&h.issuer, &1_000);
+
+    let id = h
+        .market
+        .create_and_open_round(&config(&h), &1, &Bytes::new(&h.e));
+    let auths = h.e.auths();
+    assert_eq!(auths.len(), 1);
+    assert_eq!(auths[0].0, h.issuer);
+    let round = h.market.get_round(&id);
+
+    assert_eq!(round.status, RoundStatus::Open);
+    assert!(round.rwa_escrowed);
+    assert_eq!(h.rwa.balance(&h.market.address), 1_000);
+    assert!(h.controller.configuration().4);
+}
+
+#[test]
 fn round_requires_escrow_then_registers_only_live_eligible_bidder() {
     let h = setup();
     let id = funded_open_round(&h);

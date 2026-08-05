@@ -30,6 +30,7 @@ const API = import.meta.env.VITE_INDEXER_URL ?? "http://127.0.0.1:8787";
 const DEPOSIT = 200_000_000n;
 const MIN_BID = 80_000_000n;
 const TOKEN = testnetEvidence.deployment.contracts.confidentialToken.contractId;
+const LIVE_MARKET = testnetEvidence.deployment.liveMarket.contractId;
 
 type LocalDelegation = {
   value: string;
@@ -45,6 +46,7 @@ type LocalConfidentialState = {
 };
 export type SandboxRound = {
   roundId: string;
+  market: string;
   issuer: string;
   controller: string;
   bidDeadlineLedger: number;
@@ -72,6 +74,9 @@ type PreparedRound = {
     settlementDeadlineLedger: number;
   };
 };
+
+export type CreateRoundStage = "account" | "controller" | "approval" | "confirmation" | "activation";
+type CreateRoundProgress = (stage: CreateRoundStage) => void;
 
 let proverLoaderConfigured = false;
 let noirRuntime: Promise<unknown> | null = null;
@@ -167,31 +172,37 @@ export async function initializeConfidentialAccount(session: WalletSession, requ
   }
 }
 
-export async function createSandboxRound(session: WalletSession) {
+export async function createSandboxRound(session: WalletSession, onProgress?: CreateRoundProgress) {
+  onProgress?.("account");
   await initializeConfidentialAccount(session, false);
+  onProgress?.("controller");
   const prepared = await api<PreparedRound>("/api/sandbox/prepare", { issuer: session.address });
-  const client = productClient();
-  const signer = freighterSigner(session);
-  const created = await client.createRound({
+  const client = productClient(LIVE_MARKET);
+  const walletSigner = freighterSigner(session);
+  const signer = {
+    publicKey: walletSigner.publicKey,
+    async sign(txXdrBase64: string) {
+      onProgress?.("approval");
+      const signed = await walletSigner.sign(txXdrBase64);
+      onProgress?.("confirmation");
+      return signed;
+    },
+  };
+  const opened = await client.createAndOpenRound({
     ...prepared.config,
     rwaLot: BigInt(prepared.config.rwaLot),
     reservePublic: BigInt(prepared.config.reservePublic),
-  }, signer);
-  const registered = await client.registerController(
-    created.roundId,
+  },
     prepared.config.auditorId,
     xdr.ScVal.fromXDR(prepared.registerDataXdr, "base64"),
     signer,
   );
-  const opened = await client.fundAndOpen(created.roundId, signer);
+  onProgress?.("activation");
   return api<SandboxRound>("/api/sandbox/activate", {
     setupId: prepared.setupId,
-    roundId: created.roundId,
+    roundId: opened.roundId,
     receipts: {
-      createRound: created.transaction,
-      registerController: registered.hash,
-      fundRound: opened.fundTransaction,
-      openRound: opened.openTransaction,
+      createAndOpenRound: opened.transaction,
     },
   });
 }
@@ -203,7 +214,7 @@ export async function submitSandboxBid(session: WalletSession, round: SandboxRou
   if (!local) throw new Error("Confidential state is unavailable in this browser");
   await api<{ transaction: string }>("/api/sandbox/allowlist", { roundId: round.roundId, account: session.address });
 
-  const client = productClient();
+  const client = productClient(round.market);
   const signer = freighterSigner(session);
   let spendableValue = BigInt(local.spendableValue);
   let spendableRandomness = BigInt(local.spendableRandomness);
@@ -261,7 +272,7 @@ export async function submitSandboxBid(session: WalletSession, round: SandboxRou
     };
     saveLocal(session.address, local);
     const registered = await client.chain.invoke(
-      testnetEvidence.deployment.contracts.market.contractId,
+      round.market,
       "register_bid",
       [nativeToScVal(Uint8Array.from(round.roundId.match(/.{2}/g) ?? [], (byte) => Number.parseInt(byte, 16)), { type: "bytes" }), new Address(session.address).toScVal()],
       signer,
@@ -305,7 +316,7 @@ export async function reclaimSandboxBid(session: WalletSession, round: SandboxRo
   const prover = proverFromArtifact(revokeSpenderArtifact);
   try {
     const generated = await prover.prove(witness.inputs);
-    const result = await productClient().chain.invoke(
+    const result = await productClient(round.market).chain.invoke(
       TOKEN,
       "revoke_spender",
       [

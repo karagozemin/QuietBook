@@ -7,7 +7,11 @@ import withdrawal from "../../../docs/evidence/testnet/withdrawal.json" with { t
 export const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 export const rpcUrl = deployment.rpcUrl;
 export const startLedger = deployment.ledgerRange.start;
-export const marketContracts = [deployment.contracts.market.contractId, withdrawal.market];
+export const marketContracts = [
+  deployment.contracts.market.contractId,
+  deployment.liveMarket.contractId,
+  withdrawal.market,
+];
 export const contractGroups: Record<string, string[]> = {
   core: [
     ...marketContracts,

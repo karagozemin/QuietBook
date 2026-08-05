@@ -215,97 +215,35 @@ pub struct QuietBookMarket;
 
 #[contractimpl]
 impl QuietBookMarket {
+    pub fn create_and_open_round(
+        e: Env,
+        config: RoundConfig,
+        auditor_id: u32,
+        register_data: Bytes,
+    ) -> BytesN<32> {
+        config.issuer.require_auth();
+        let round_id = create_round_internal(&e, config);
+        fund_round_internal(&e, &round_id);
+        register_controller_internal(&e, &round_id, auditor_id, &register_data);
+        open_round_internal(&e, &round_id);
+        round_id
+    }
+
     pub fn create_round(e: Env, config: RoundConfig) -> BytesN<32> {
         config.issuer.require_auth();
-        validate_config(&e, &config);
-
-        let sequence = e
-            .storage()
-            .instance()
-            .get::<_, u64>(&DataKey::NextRound)
-            .unwrap_or(0);
-        let id = BytesN::from_array(
-            &e,
-            &e.crypto()
-                .sha256(&(e.current_contract_address(), sequence, config.clone()).to_xdr(&e))
-                .to_array(),
-        );
-        e.storage()
-            .instance()
-            .set(&DataKey::NextRound, &(sequence + 1));
-
-        let round = Round {
-            id: id.clone(),
-            config,
-            status: RoundStatus::Draft,
-            bidder_count: 0,
-            participant_set_hash: None,
-            winner: None,
-            proof_hash: None,
-            rwa_escrowed: false,
-            rwa_reclaimed: false,
-        };
-        e.storage()
-            .persistent()
-            .set(&DataKey::Round(id.clone()), &round);
-        e.storage()
-            .persistent()
-            .set(&DataKey::Bidders(id.clone()), &Vec::<Address>::new(&e));
-        RoundCreated {
-            round_id: id.clone(),
-            issuer: round.config.issuer.clone(),
-            config: round.config.clone(),
-        }
-        .publish(&e);
-        id
+        create_round_internal(&e, config)
     }
 
     pub fn fund_round(e: Env, round_id: BytesN<32>) {
-        let mut round = load_round(&e, &round_id);
+        let round = load_round(&e, &round_id);
         round.config.issuer.require_auth();
-        require_status(&e, &round, RoundStatus::Draft, MarketError::RoundNotDraft);
-        if round.rwa_escrowed {
-            panic_with(&e, MarketError::RwaEscrowInsufficient);
-        }
-
-        soroban_sdk::token::TokenClient::new(&e, &round.config.rwa_token).transfer(
-            &round.config.issuer,
-            e.current_contract_address(),
-            &round.config.rwa_lot,
-        );
-        round.rwa_escrowed = true;
-        RwaFunded {
-            round_id,
-            amount: round.config.rwa_lot,
-        }
-        .publish(&e);
-        save_round(&e, &round);
+        fund_round_internal(&e, &round_id);
     }
 
     pub fn open_round(e: Env, round_id: BytesN<32>) {
-        let mut round = load_round(&e, &round_id);
+        let round = load_round(&e, &round_id);
         round.config.issuer.require_auth();
-        require_status(&e, &round, RoundStatus::Draft, MarketError::RoundNotDraft);
-        if e.ledger().sequence() > round.config.bid_deadline_ledger {
-            panic_with(&e, MarketError::BidDeadlinePassed);
-        }
-        if !round.rwa_escrowed
-            || soroban_sdk::token::TokenClient::new(&e, &round.config.rwa_token)
-                .balance(&e.current_contract_address())
-                < round.config.rwa_lot
-        {
-            panic_with(&e, MarketError::RwaEscrowInsufficient);
-        }
-        if !controller_configuration_matches(&e, &round, true) {
-            panic_with(&e, MarketError::ControllerConfigurationMismatch);
-        }
-        round.status = RoundStatus::Open;
-        RoundOpened {
-            round_id,
-            opened_ledger: e.ledger().sequence(),
-        }
-        .publish(&e);
-        save_round(&e, &round);
+        open_round_internal(&e, &round_id);
     }
 
     pub fn register_controller(
@@ -316,15 +254,7 @@ impl QuietBookMarket {
     ) {
         let round = load_round(&e, &round_id);
         round.config.issuer.require_auth();
-        require_status(&e, &round, RoundStatus::Draft, MarketError::RoundNotDraft);
-        if !controller_configuration_matches(&e, &round, false) {
-            panic_with(&e, MarketError::ControllerConfigurationMismatch);
-        }
-        RoundControllerClient::new(&e, &round.config.controller)
-            .register(&auditor_id, &register_data);
-        if !controller_configuration_matches(&e, &round, true) {
-            panic_with(&e, MarketError::ControllerConfigurationMismatch);
-        }
+        register_controller_internal(&e, &round_id, auditor_id, &register_data);
     }
 
     pub fn register_bid(e: Env, round_id: BytesN<32>, bidder: Address) {
@@ -621,6 +551,111 @@ impl QuietBookMarket {
             .persistent()
             .get(&DataKey::Bid(round_id, bidder))
     }
+}
+
+fn create_round_internal(e: &Env, config: RoundConfig) -> BytesN<32> {
+    validate_config(e, &config);
+    let sequence = e
+        .storage()
+        .instance()
+        .get::<_, u64>(&DataKey::NextRound)
+        .unwrap_or(0);
+    let id = BytesN::from_array(
+        e,
+        &e.crypto()
+            .sha256(&(e.current_contract_address(), sequence, config.clone()).to_xdr(e))
+            .to_array(),
+    );
+    e.storage()
+        .instance()
+        .set(&DataKey::NextRound, &(sequence + 1));
+
+    let round = Round {
+        id: id.clone(),
+        config,
+        status: RoundStatus::Draft,
+        bidder_count: 0,
+        participant_set_hash: None,
+        winner: None,
+        proof_hash: None,
+        rwa_escrowed: false,
+        rwa_reclaimed: false,
+    };
+    e.storage()
+        .persistent()
+        .set(&DataKey::Round(id.clone()), &round);
+    e.storage()
+        .persistent()
+        .set(&DataKey::Bidders(id.clone()), &Vec::<Address>::new(e));
+    RoundCreated {
+        round_id: id.clone(),
+        issuer: round.config.issuer.clone(),
+        config: round.config.clone(),
+    }
+    .publish(e);
+    id
+}
+
+fn fund_round_internal(e: &Env, round_id: &BytesN<32>) {
+    let mut round = load_round(e, round_id);
+    require_status(e, &round, RoundStatus::Draft, MarketError::RoundNotDraft);
+    if round.rwa_escrowed {
+        panic_with(e, MarketError::RwaEscrowInsufficient);
+    }
+    soroban_sdk::token::TokenClient::new(e, &round.config.rwa_token).transfer(
+        &round.config.issuer,
+        &e.current_contract_address(),
+        &round.config.rwa_lot,
+    );
+    round.rwa_escrowed = true;
+    RwaFunded {
+        round_id: round_id.clone(),
+        amount: round.config.rwa_lot,
+    }
+    .publish(e);
+    save_round(e, &round);
+}
+
+fn register_controller_internal(
+    e: &Env,
+    round_id: &BytesN<32>,
+    auditor_id: u32,
+    register_data: &Bytes,
+) {
+    let round = load_round(e, round_id);
+    require_status(e, &round, RoundStatus::Draft, MarketError::RoundNotDraft);
+    if !controller_configuration_matches(e, &round, false) {
+        panic_with(e, MarketError::ControllerConfigurationMismatch);
+    }
+    RoundControllerClient::new(e, &round.config.controller).register(&auditor_id, register_data);
+    if !controller_configuration_matches(e, &round, true) {
+        panic_with(e, MarketError::ControllerConfigurationMismatch);
+    }
+}
+
+fn open_round_internal(e: &Env, round_id: &BytesN<32>) {
+    let mut round = load_round(e, round_id);
+    require_status(e, &round, RoundStatus::Draft, MarketError::RoundNotDraft);
+    if e.ledger().sequence() > round.config.bid_deadline_ledger {
+        panic_with(e, MarketError::BidDeadlinePassed);
+    }
+    if !round.rwa_escrowed
+        || soroban_sdk::token::TokenClient::new(e, &round.config.rwa_token)
+            .balance(&e.current_contract_address())
+            < round.config.rwa_lot
+    {
+        panic_with(e, MarketError::RwaEscrowInsufficient);
+    }
+    if !controller_configuration_matches(e, &round, true) {
+        panic_with(e, MarketError::ControllerConfigurationMismatch);
+    }
+    round.status = RoundStatus::Open;
+    RoundOpened {
+        round_id: round_id.clone(),
+        opened_ledger: e.ledger().sequence(),
+    }
+    .publish(e);
+    save_round(e, &round);
 }
 
 fn validate_config(e: &Env, config: &RoundConfig) {

@@ -89,6 +89,16 @@
       "explorer": "https://stellar.expert/explorer/testnet/contract/CDZTPSH6P7W2KTUCURCPEFMVJEUPV26GMI46J3YBAXSC5DHLMJ5JOQTX"
     }
   },
+  "liveMarket": {
+    "contractId": "CCXR6ZZ7ZXYMRAF7UCRKYABBVWPLVYDJRSI3KH4Y5ZQQTGNSGGNXVZNU",
+    "transactionHashes": [
+      "0a2089169415268363bee895a97879b1820fb9e241daf524d2a70ec5240430f8",
+      "c22c4da2a0c9525e4d5b56baccf6420249032a941ff2994619705bfa34f565a7"
+    ],
+    "wasmSha256": "746d47dfbdefa237d867f8a958f8f54927405eb629ab35086d1373c388ba904c",
+    "explorer": "https://stellar.expert/explorer/testnet/contract/CCXR6ZZ7ZXYMRAF7UCRKYABBVWPLVYDJRSI3KH4Y5ZQQTGNSGGNXVZNU",
+    "feature": "Atomic create, fund, controller registration, and open for live sandbox rounds"
+  },
   "supersededContracts": {
     "marketWithoutControllerRegistration": {
       "contractId": "CCNRJ5OFV2V2O2OMOKRNXGEWNDP3PAUZL4HVBIVUT74TLGYT4XWKTNAY",

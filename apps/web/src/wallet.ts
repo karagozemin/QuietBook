@@ -140,11 +140,11 @@ export class BrowserProductChain implements ProductChain {
   }
 }
 
-export function productClient() {
+export function productClient(market = testnetEvidence.deployment.contracts.market.contractId) {
   return new QuietBookClient(
     new BrowserProductChain(testnetEvidence.deployment.rpcUrl),
     {
-      market: testnetEvidence.deployment.contracts.market.contractId,
+      market,
       confidentialToken: testnetEvidence.deployment.contracts.confidentialToken.contractId,
     },
   );

@@ -18,7 +18,9 @@ const chain: ProductChain = {
     return {
       hash: method.padEnd(64, "0").slice(0, 64),
       status: "SUCCESS",
-      returnValue: method === "create_round" ? xdr.ScVal.scvBytes(Buffer.from(roundId, "hex")) : undefined,
+      returnValue: method === "create_round" || method === "create_and_open_round"
+        ? xdr.ScVal.scvBytes(Buffer.from(roundId, "hex"))
+        : undefined,
     };
   },
   async simulate(_contract, method) {
@@ -74,6 +76,21 @@ const created = await client.createRound({
 }, signer);
 assert.equal(created.roundId, roundId);
 
+const atomic = await client.createAndOpenRound({
+  issuer: address,
+  rwaToken: contract,
+  rwaLot: 10n,
+  confidentialToken: contract,
+  controller: contract,
+  eligibilityPolicy: contract,
+  maxBidVerifier: contract,
+  auditorId: 0,
+  reservePublic: 8n,
+  bidDeadlineLedger: 100,
+  settlementDeadlineLedger: 200,
+}, 0, xdr.ScVal.scvBytes(new Uint8Array([1])), signer);
+assert.equal(atomic.roundId, roundId);
+
 const fixture = buildFixture();
 await client.submitSealedBid({
   roundId,
@@ -98,9 +115,9 @@ await client.reclaimBid({
 
 assert.deepEqual(
   calls.map((call) => call.method),
-  ["create_round", "set_spender", "register_bid", "withdraw_bid", "revoke_spender"],
+  ["create_round", "create_and_open_round", "set_spender", "register_bid", "withdraw_bid", "revoke_spender"],
 );
-assert.equal(calls[3]!.contract, "C-MARKET");
-assert.equal(calls[4]!.contract, "C-TOKEN");
+assert.equal(calls[4]!.contract, "C-MARKET");
+assert.equal(calls[5]!.contract, "C-TOKEN");
 
 console.log("product orchestration checks passed");

@@ -34,6 +34,7 @@ type BidOpening = {
 };
 type PendingRound = {
   setupId: string;
+  market?: string;
   issuer: string;
   controller: string;
   controllerSk: string;
@@ -62,6 +63,8 @@ const transferArtifact = JSON.parse(readFileSync(join(root, "packages/sdk/circui
 const maxBidArtifact = JSON.parse(readFileSync(join(root, "packages/sdk/circuits/max_bid.json"), "utf8"));
 const RESERVE = 80_000_000n;
 const RWA_LOT = 10_000_000n;
+const LEGACY_MARKET = deployment.contracts.market.contractId;
+const LIVE_MARKET = deployment.liveMarket.contractId;
 
 function readState(): SandboxState {
   if (!existsSync(statePath)) return { pending: {}, rounds: {} };
@@ -109,6 +112,7 @@ function bytes32(value: string) {
 function publicRound(round: SandboxRound) {
   return {
     roundId: round.roundId,
+    market: round.market ?? LEGACY_MARKET,
     issuer: round.issuer,
     controller: round.controller,
     bidDeadlineLedger: round.bidDeadlineLedger,
@@ -149,7 +153,7 @@ export class LiveSandbox {
       const deployed = stellar([
         "contract", "deploy", "--wasm", controllerWasm,
         "--source", "quietbook-deployer", "--network", "testnet", "--optimize=false", "--",
-        "--market", deployment.contracts.market.contractId,
+        "--market", LIVE_MARKET,
         "--confidential_token", deployment.contracts.confidentialToken.contractId,
         "--issuer_recipient", issuer,
         "--settlement_deadline_ledger", String(settlementDeadlineLedger),
@@ -177,6 +181,7 @@ export class LiveSandbox {
       const setupId = randomUUID();
       const pending: PendingRound = {
         setupId,
+        market: LIVE_MARKET,
         issuer,
         controller,
         controllerSk: `0x${controllerKeys.sk.toString(16).padStart(64, "0")}`,
@@ -263,6 +268,7 @@ export class LiveSandbox {
       const state = readState();
       const round = state.rounds[roundId];
       if (!round) throw new Error("Live round not found");
+      const market = round.market ?? LEGACY_MARKET;
       const chain = client();
       const operator = keypairSigner(secret("quietbook-operator"), Networks.TESTNET);
       const latest = await chain.latestLedger();
@@ -271,14 +277,14 @@ export class LiveSandbox {
       }
       if (!round.receipts.closeRound) {
         round.receipts.closeRound = (await chain.invoke(
-          deployment.contracts.market.contractId,
+          market,
           "close_round",
           [bytes32(roundId)],
           operator,
         )).hash;
         saveState(state);
       }
-      const biddersValue = await chain.simulate(deployment.contracts.market.contractId, "get_bidders", [bytes32(roundId)]);
+      const biddersValue = await chain.simulate(market, "get_bidders", [bytes32(roundId)]);
       const bidders = (await import("@stellar/stellar-sdk")).scValToNative(biddersValue) as string[];
       if (bidders.length === 0) throw new Error("No active bids to settle");
       const openings = bidders.map((account) => round.bids[account]);
@@ -309,7 +315,7 @@ export class LiveSandbox {
       try {
         const transferProof = await transferProver.prove(transferWitness.inputs);
         const transferData = encodeSpenderTransferData(transferWitness, transferProof.proof);
-        const statement = await chain.simulate(deployment.contracts.market.contractId, "max_bid_public_inputs", [
+        const statement = await chain.simulate(market, "max_bid_public_inputs", [
           bytes32(roundId), xdr.ScVal.scvU32(winnerIndex), transferData,
         ]);
         const statementBytes = Buffer.from(statement.bytes());
@@ -323,7 +329,7 @@ export class LiveSandbox {
         const publicInputs = Buffer.concat(maxBidProof.publicInputs.map((value) => Buffer.from(value.replace(/^0x/, "").padStart(64, "0"), "hex")));
         if (!publicInputs.equals(statementBytes)) throw new Error("Max-bid statement mismatch");
         const finalized = await chain.invoke(
-          deployment.contracts.market.contractId,
+          market,
           "finalize",
           [bytes32(roundId), xdr.ScVal.scvU32(winnerIndex), nativeToScVal(maxBidProof.proof, { type: "bytes" }), transferData],
           operator,

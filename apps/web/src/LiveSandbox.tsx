@@ -8,6 +8,7 @@ import {
   reclaimSandboxBid,
   settleSandboxRound,
   submitSandboxBid,
+  type CreateRoundStage,
   type SandboxRound,
 } from "./sandbox";
 
@@ -17,6 +18,38 @@ type ActionState =
   | { status: "success"; label: string; hash?: string }
   | { status: "error"; label: string };
 
+const createRoundSteps: Array<{ id: CreateRoundStage; label: string; detail: string }> = [
+  { id: "account", label: "Secure account", detail: "Checking confidential identity" },
+  { id: "controller", label: "Prepare controller", detail: "Deploying isolated controller" },
+  { id: "approval", label: "Approve once", detail: "Waiting for Freighter" },
+  { id: "confirmation", label: "Confirm on Testnet", detail: "Waiting for ledger inclusion" },
+  { id: "activation", label: "Publish round", detail: "Updating live evidence" },
+];
+
+function CreateRoundProgress({ stage }: { stage: CreateRoundStage }) {
+  const activeIndex = createRoundSteps.findIndex((step) => step.id === stage);
+  const progress = ((activeIndex + 0.55) / createRoundSteps.length) * 100;
+  return (
+    <section className="live-create-progress" aria-live="polite" aria-label="Live round creation progress">
+      <div className="live-progress-head">
+        <span><Activity className="spin" size={15}/> OPENING LIVE ROUND</span>
+        <b>{activeIndex + 1} / {createRoundSteps.length}</b>
+      </div>
+      <div className="live-progress-track" role="progressbar" aria-valuemin={0} aria-valuemax={createRoundSteps.length} aria-valuenow={activeIndex + 1}>
+        <span style={{ width: `${progress}%` }}/>
+      </div>
+      <div className="live-progress-steps">
+        {createRoundSteps.map((step, index) => (
+          <div key={step.id} className={index < activeIndex ? "complete" : index === activeIndex ? "active" : ""}>
+            <span>{index < activeIndex ? <Check size={13}/> : index + 1}</span>
+            <div><strong>{step.label}</strong><small>{index < activeIndex ? "Completed" : step.detail}</small></div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function LiveSandboxPage({ session, onConnect }: {
   session?: WalletSession;
   onConnect: () => void;
@@ -25,6 +58,7 @@ export function LiveSandboxPage({ session, onConnect }: {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [action, setAction] = useState<ActionState>({ status: "idle" });
+  const [createStage, setCreateStage] = useState<CreateRoundStage | null>(null);
   const [bid, setBid] = useState("12");
 
   const refresh = useCallback(async () => {
@@ -52,12 +86,19 @@ export function LiveSandboxPage({ session, onConnect }: {
 
   const createRound = async () => {
     if (!session) return onConnect();
-    setAction({ status: "loading", label: "Preparing controller and confidential account" });
+    const updateProgress = (stage: CreateRoundStage) => {
+      const current = createRoundSteps.find((step) => step.id === stage)!;
+      setCreateStage(stage);
+      setAction({ status: "loading", label: current.detail });
+    };
+    updateProgress("account");
     try {
-      const created = await createSandboxRound(session);
+      const created = await createSandboxRound(session, updateProgress);
       setRounds((current) => [created, ...current.filter((item) => item.roundId !== created.roundId)]);
-      setAction({ status: "success", label: "Live round opened", hash: created.receipts.openRound });
+      setCreateStage(null);
+      setAction({ status: "success", label: "Live round opened", hash: created.receipts.createAndOpenRound });
     } catch (error) {
+      setCreateStage(null);
       setAction({ status: "error", label: error instanceof Error ? error.message : "Round creation failed" });
     }
   };
@@ -154,7 +195,8 @@ export function LiveSandboxPage({ session, onConnect }: {
         </>
       )}
 
-      {action.status !== "idle" && <div className={`live-alert ${action.status}`} role="status">{action.status === "loading" ? <Activity className="spin" size={16}/> : action.status === "success" ? <BadgeCheck size={16}/> : <Radio size={16}/>}<span><strong>{action.status === "loading" ? "Wallet flow active" : action.status === "success" ? "Confirmed" : "Action stopped"}</strong>{action.label}</span>{action.status === "success" && action.hash && <a href={explorerTransaction(action.hash)} target="_blank" rel="noreferrer">Receipt <ArrowUpRight size={13}/></a>}</div>}
+      {action.status === "loading" && createStage && <CreateRoundProgress stage={createStage}/>}
+      {action.status !== "idle" && !(action.status === "loading" && createStage) && <div className={`live-alert ${action.status}`} role="status">{action.status === "loading" ? <Activity className="spin" size={16}/> : action.status === "success" ? <BadgeCheck size={16}/> : <Radio size={16}/>}<span><strong>{action.status === "loading" ? "Wallet flow active" : action.status === "success" ? "Confirmed" : "Action stopped"}</strong>{action.label}</span>{action.status === "success" && action.hash && <a href={explorerTransaction(action.hash)} target="_blank" rel="noreferrer">Receipt <ArrowUpRight size={13}/></a>}</div>}
     </div>
   );
 }

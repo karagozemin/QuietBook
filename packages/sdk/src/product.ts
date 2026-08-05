@@ -101,6 +101,22 @@ export class QuietBookClient {
     return { transaction: result.hash, roundId: toHex(result.returnValue.bytes()) };
   }
 
+  async createAndOpenRound(
+    config: RoundConfigInput,
+    auditorId: number,
+    registerData: xdr.ScVal,
+    signer: Signer,
+  ) {
+    const result = await this.chain.invoke(
+      this.contracts.market,
+      "create_and_open_round",
+      [encodeRoundConfig(config), xdr.ScVal.scvU32(auditorId), registerData],
+      signer,
+    );
+    if (!result.returnValue) throw new Error("create_and_open_round returned no round id");
+    return { transaction: result.hash, roundId: toHex(result.returnValue.bytes()) };
+  }
+
   async registerController(
     roundId: string,
     auditorId: number,
