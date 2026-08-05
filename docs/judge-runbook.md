@@ -23,6 +23,8 @@ Open the local URL printed by Vite (`http://127.0.0.1:5173` by default). The ind
 
 The wallet-free story verifies previously confirmed Testnet transactions; it never presents a replayed receipt as a newly submitted transaction.
 
+`Explore live round` is a separate, stateful path. It requires funded Freighter Testnet wallets and creates new controller, round, bid, settlement, and reclaim receipts. Browser proving may take longer on the first action while the prover assets initialize. The replay remains available from the `Verified replay` switch.
+
 The final settlement receipt is transaction `3a47b09ea1def84f1bef4bb71a00fab2080cfb5e5697a84d86c549a97f89246d`.
 
 ## Expected limitations

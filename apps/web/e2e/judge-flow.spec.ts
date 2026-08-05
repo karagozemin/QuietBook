@@ -6,6 +6,7 @@ test("landing, intro and verified Testnet story remain usable", async ({ page })
     if (message.type() === "error") browserErrors.push(message.text());
   });
   page.on("pageerror", (error) => browserErrors.push(error.message));
+  await page.route("http://127.0.0.1:8787/api/sandbox/rounds", (route) => route.fulfill({ json: { rounds: [] } }));
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "QuietBook", exact: true })).toBeVisible();
@@ -35,10 +36,18 @@ test("landing, intro and verified Testnet story remain usable", async ({ page })
   await page.getByRole("button", { name: "Run Testnet story" }).click();
   await expect(page.getByRole("heading", { name: "The market sees participation. Not the demand curve." })).toBeVisible();
   await expect(page.getByRole("heading", { name: "The winner is proven against the complete book." })).toBeVisible({ timeout: 6_000 });
-  await page.getByRole("button", { name: "Continue" }).click();
+  await page.keyboard.press("ArrowLeft");
+  await expect(page.getByRole("heading", { name: "The market sees participation. Not the demand curve." })).toBeVisible();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
   await expect(page.getByRole("heading", { name: "Confidential payment. Public delivery. One invocation." })).toBeVisible();
-  await page.getByRole("button", { name: "Enter verified run" }).click();
-
+  await expect(page.getByRole("heading", { name: "QBNOTE-26", exact: true })).toBeVisible({ timeout: 6_000 });
+  if ((page.viewportSize()?.width ?? 0) <= 820) await page.getByRole("button", { name: "Open navigation" }).click();
+  await page.getByRole("button", { name: "Back to QuietBook home" }).click();
+  await expect(page.getByRole("heading", { name: "QuietBook", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: /Explore live round/ }).click();
+  await expect(page.getByRole("heading", { name: "Live issuance", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Verified replay" }).click();
   await expect(page.getByRole("heading", { name: "QBNOTE-26", exact: true })).toBeVisible();
   await expect(page.getByText("Start here", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Verify completed round" }).click();
@@ -55,9 +64,11 @@ test("landing, intro and verified Testnet story remain usable", async ({ page })
 
 test("live story fails honestly when public RPC is unavailable", async ({ page }) => {
   await page.route("https://soroban-testnet.stellar.org/**", (route) => route.abort());
+  await page.route("http://127.0.0.1:8787/api/sandbox/rounds", (route) => route.fulfill({ json: { rounds: [] } }));
   await page.goto("/");
   await expect(page.getByText("Evidence fallback", { exact: true })).toBeVisible({ timeout: 14_000 });
   await page.getByRole("button", { name: /Explore live round/ }).click();
+  await page.getByRole("button", { name: "Verified replay" }).click();
   await expect(page.getByRole("heading", { name: "QBNOTE-26", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Verify completed round" }).click();
   await expect(page.getByText("Live infrastructure did not answer", { exact: true })).toBeVisible({ timeout: 14_000 });

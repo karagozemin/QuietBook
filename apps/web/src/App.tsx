@@ -37,6 +37,8 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { MarketCanvas } from "./MarketCanvas";
+import { LiveSandboxPage } from "./LiveSandbox";
+import { listSandboxRounds, type SandboxRound } from "./sandbox";
 import {
   compact,
   explorerTransaction,
@@ -49,6 +51,7 @@ import type { WalletSession } from "./wallet";
 type AppMode = "landing" | "intro" | "console";
 type Workspace = "overview" | "portfolio" | "audit" | "evidence";
 type Perspective = "public" | "issuer" | "investor" | "auditor";
+type Experience = "live" | "replay";
 type WalletState =
   | { status: "disconnected" }
   | { status: "connecting" }
@@ -217,13 +220,16 @@ function WalletButton({ wallet, onConnect, onDisconnect }: {
   );
 }
 
-function Brand({ compactBrand = false }: { compactBrand?: boolean }) {
-  return (
-    <div className={`brand ${compactBrand ? "compact" : ""}`}>
+function Brand({ compactBrand = false, onHome }: { compactBrand?: boolean; onHome?: () => void }) {
+  const content = (
+    <>
       <span className="brand-symbol"><img src="/quietbook-logo.jpg" alt="" /></span>
       <span><strong>QuietBook</strong>{!compactBrand && <small>Primary issuance</small>}</span>
-    </div>
+    </>
   );
+  return onHome
+    ? <button type="button" className={`brand brand-home ${compactBrand ? "compact" : ""}`} onClick={onHome} aria-label="Back to QuietBook home">{content}</button>
+    : <div className={`brand ${compactBrand ? "compact" : ""}`}>{content}</div>;
 }
 
 function PublicHeader({ wallet, onConnect, onDisconnect, onOpenConsole }: {
@@ -311,15 +317,33 @@ function Intro({ step, onStep, onBack, onComplete }: {
 }) {
   const slide = introSlides[step]!;
   useEffect(() => {
-    if (step >= introSlides.length - 1) return;
-    const timer = window.setTimeout(() => onStep(step + 1), 4_500);
+    const timer = window.setTimeout(() => {
+      if (step >= introSlides.length - 1) onComplete();
+      else onStep(step + 1);
+    }, 4_500);
     return () => window.clearTimeout(timer);
-  }, [onStep, step]);
+  }, [onComplete, onStep, step]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        onStep(Math.max(0, step - 1));
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        if (step >= introSlides.length - 1) onComplete();
+        else onStep(step + 1);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onComplete, onStep, step]);
 
   return (
     <div className="intro page-enter">
       <header className="intro-header">
-        <Brand/>
+        <Brand onHome={onBack}/>
         <div className="intro-progress" aria-label={`Introduction step ${step + 1} of ${introSlides.length}`}>
           {introSlides.map((item, index) => <span key={item.kicker} className={index < step ? "complete" : index === step ? "active" : ""}/>) }
         </div>
@@ -351,6 +375,8 @@ function ConsoleHeader({
   onConnect,
   onDisconnect,
   onMenu,
+  experience,
+  onExperience,
 }: {
   workspace: Workspace;
   wallet: WalletState;
@@ -358,27 +384,34 @@ function ConsoleHeader({
   onConnect: () => void;
   onDisconnect: () => void;
   onMenu: () => void;
+  experience: Experience;
+  onExperience: (experience: Experience) => void;
 }) {
   return (
     <header className="console-header">
       <Pressable className="mobile-menu icon-pressable" onClick={onMenu}><Menu size={19}/><span className="sr-only">Open navigation</span></Pressable>
       <div className="console-title"><span>Workspace</span><strong>{workspaceItems.find((item) => item.id === workspace)?.label}</strong></div>
+      <div className="experience-switch" aria-label="Round mode">
+        <button type="button" className={experience === "live" ? "active" : ""} onClick={() => onExperience("live")}><Radio size={13}/> Live round</button>
+        <button type="button" className={experience === "replay" ? "active" : ""} onClick={() => onExperience("replay")}><FileCheck2 size={13}/> Verified replay</button>
+      </div>
       <div className="console-header-actions"><LivePill live={live}/><WalletButton wallet={wallet} onConnect={onConnect} onDisconnect={onDisconnect}/></div>
     </header>
   );
 }
 
-function Sidebar({ workspace, open, onSelect, onClose }: {
+function Sidebar({ workspace, open, onSelect, onClose, onHome }: {
   workspace: Workspace;
   open: boolean;
   onSelect: (workspace: Workspace) => void;
   onClose: () => void;
+  onHome: () => void;
 }) {
   return (
     <>
       <button className={`sidebar-scrim ${open ? "open" : ""}`} aria-label="Close navigation" onClick={onClose}/>
       <aside className={`sidebar ${open ? "open" : ""}`}>
-        <Brand/>
+        <Brand onHome={onHome}/>
         <nav aria-label="Workspace navigation">
           <span className="nav-label">WORKSPACE</span>
           {workspaceItems.map(({ id, label, icon: Icon }) => (
@@ -757,19 +790,44 @@ const evidenceRows = [
 
 function EvidencePage({ live, onRefresh }: { live: LiveState; onRefresh: () => void }) {
   const [copied, setCopied] = useState<string | null>(null);
+  const [sandboxRound, setSandboxRound] = useState<SandboxRound | null>(null);
+  const refreshSandbox = useCallback(() => {
+    void listSandboxRounds().then((rounds) => setSandboxRound(rounds[0] ?? null)).catch(() => setSandboxRound(null));
+  }, []);
+  useEffect(() => refreshSandbox(), [refreshSandbox]);
   const copy = async (value: string) => {
     await navigator.clipboard.writeText(value);
     setCopied(value);
     window.setTimeout(() => setCopied(null), 1200);
   };
+  const liveEvidenceRows = sandboxRound
+    ? [
+        ...Object.entries(sandboxRound.receipts)
+          .filter(([, value]) => /^[0-9a-f]{64}$/i.test(value))
+          .map(([label, value]) => [label.replace(/([A-Z])/g, " $1"), value, "TRANSACTION"] as const),
+        ...(sandboxRound.proof ? [["Maximum-bid proof", sandboxRound.proof.hash, "PROOF SHA-256"] as const] : []),
+      ]
+    : [];
+  const refreshAll = () => {
+    onRefresh();
+    refreshSandbox();
+  };
   return (
     <div className="workspace-page page-enter">
-      <div className="page-title-row"><div><span className="section-kicker">APPEND-ONLY TESTNET RECORD</span><h1>Evidence</h1><p>Every product claim resolves to a receipt, proof hash or live contract read.</p></div><Pressable className="button-secondary" onClick={onRefresh}><RefreshCw className={live.status === "checking" ? "spin" : ""} size={15}/> Refresh live reads</Pressable></div>
+      <div className="page-title-row"><div><span className="section-kicker">APPEND-ONLY TESTNET RECORD</span><h1>Evidence</h1><p>Every product claim resolves to a receipt, proof hash or live contract read.</p></div><Pressable className="button-secondary" onClick={refreshAll}><RefreshCw className={live.status === "checking" ? "spin" : ""} size={15}/> Refresh live reads</Pressable></div>
       <section className="evidence-health">
         <div><span className={`health-signal ${live.status}`}/><span><strong>{live.status === "verified" ? "Indexer + RPC matched" : live.status === "checking" ? "Reading live contracts" : "Evidence fallback active"}</strong><small>{live.status === "verified" ? `${live.snapshot.matchedCount}/${live.snapshot.checks.length} independent checks · ledger ${live.snapshot.latestLedger.toLocaleString()}` : "Recorded Testnet artifacts remain inspectable"}</small></span></div>
         <div><span>ROUND</span><code>{compact(testnetEvidence.settlement.roundId, 10, 8)}</code></div>
         <div><span>NETWORK</span><strong>Stellar Testnet</strong></div>
       </section>
+      {sandboxRound && <>
+        <div className="evidence-scope-heading"><div><span className="section-kicker">LATEST LIVE SANDBOX</span><h2>{compact(sandboxRound.roundId, 10, 8)}</h2></div><StatusTag tone={sandboxRound.winner ? "green" : "ink"}>{sandboxRound.winner ? "Settled" : "Open"}</StatusTag></div>
+        <section className="evidence-table live-evidence-table">
+          <div className="evidence-table-head"><span>CLAIM</span><span>REFERENCE</span><span>TYPE</span><span/></div>
+          {liveEvidenceRows.map(([label, value, type]) => <div className="evidence-row" key={`${label}:${value}`}><div><span className="evidence-icon"><BadgeCheck size={16}/></span><strong>{label}</strong></div><code>{value}</code><span>{type}</span><div className="evidence-actions"><button type="button" onClick={() => void copy(value)} aria-label={`Copy ${label}`}>{copied === value ? <Check size={15}/> : <Copy size={15}/>}</button>{type === "TRANSACTION" && <a href={explorerTransaction(value)} target="_blank" rel="noreferrer" aria-label={`Open ${label}`}><ArrowUpRight size={15}/></a>}</div></div>)}
+        </section>
+      </>}
+      <div className="evidence-scope-heading archived"><div><span className="section-kicker">VERIFIED REPLAY</span><h2>QBNOTE-26 archive</h2></div><StatusTag tone="muted">Recorded</StatusTag></div>
       <section className="evidence-table">
         <div className="evidence-table-head"><span>CLAIM</span><span>REFERENCE</span><span>TYPE</span><span/></div>
         {evidenceRows.map(([label, value, type]) => <div className="evidence-row" key={label}><div><span className="evidence-icon"><FileCheck2 size={16}/></span><strong>{label}</strong></div><code>{value}</code><span>{type}</span><div className="evidence-actions"><button type="button" onClick={() => void copy(value)} aria-label={`Copy ${label}`}>{copied === value ? <Check size={15}/> : <Copy size={15}/>}</button>{type === "TRANSACTION" && <a href={explorerTransaction(value)} target="_blank" rel="noreferrer" aria-label={`Open ${label}`}><ArrowUpRight size={15}/></a>}</div></div>)}
@@ -811,6 +869,7 @@ export function App() {
   const [mode, setMode] = useState<AppMode>("landing");
   const [introStep, setIntroStep] = useState(0);
   const [workspace, setWorkspace] = useState<Workspace>("overview");
+  const [experience, setExperience] = useState<Experience>("live");
   const [wallet, setWallet] = useState<WalletState>({ status: "disconnected" });
   const [live, setLive] = useState<LiveState>({ status: "checking" });
   const [eligibility, setEligibility] = useState<AsyncState>({ status: "idle" });
@@ -927,10 +986,15 @@ export function App() {
     setMode("console");
     setWorkspace("evidence");
   };
-  const completeIntro = () => {
+  const completeIntro = useCallback(() => {
     setMode("console");
+    setExperience("replay");
     setWorkspace("overview");
-  };
+  }, []);
+  const returnHome = useCallback(() => {
+    setSidebarOpen(false);
+    setMode("landing");
+  }, []);
   const role = useMemo(() => walletRole(wallet), [wallet]);
 
   return (
@@ -942,7 +1006,7 @@ export function App() {
           onConnect={connectWallet}
           onDisconnect={disconnectWallet}
           onIntro={() => { setIntroStep(0); setMode("intro"); }}
-          onConsole={() => setMode("console")}
+          onConsole={() => { setExperience("live"); setMode("console"); }}
         />
       )}
       {mode === "intro" && (
@@ -950,10 +1014,13 @@ export function App() {
       )}
       {mode === "console" && (
         <div className="console-shell page-enter">
-          <Sidebar workspace={workspace} open={sidebarOpen} onSelect={setWorkspace} onClose={() => setSidebarOpen(false)}/>
+          <Sidebar workspace={workspace} open={sidebarOpen} onSelect={setWorkspace} onClose={() => setSidebarOpen(false)} onHome={returnHome}/>
           <div className="console-main">
-            <ConsoleHeader workspace={workspace} wallet={wallet} live={live} onConnect={connectWallet} onDisconnect={disconnectWallet} onMenu={() => setSidebarOpen(true)}/>
-            {workspace === "overview" && (
+            <ConsoleHeader workspace={workspace} wallet={wallet} live={live} onConnect={connectWallet} onDisconnect={disconnectWallet} onMenu={() => setSidebarOpen(true)} experience={experience} onExperience={setExperience}/>
+            {workspace === "overview" && experience === "live" && (
+              <LiveSandboxPage session={wallet.status === "connected" ? wallet.session : undefined} onConnect={connectWallet}/>
+            )}
+            {workspace === "overview" && experience === "replay" && (
               <OverviewPage wallet={wallet} live={live} role={role} eligibility={eligibility} lifecycle={lifecycle} onConnect={connectWallet} onEligibility={checkEligibility} onCloseLifecycle={closeLifecycle} onRunDemo={() => void startDemo()} onEvidence={() => setWorkspace("evidence")}/>
             )}
             {workspace === "portfolio" && (

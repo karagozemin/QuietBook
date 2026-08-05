@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/marketcanvas.tsx","./src/evidence.ts","./src/live.ts","./src/main.tsx","./src/wallet.ts","./vite.config.ts"],"version":"5.9.3"}
+{"root":["./src/app.tsx","./src/livesandbox.tsx","./src/marketcanvas.tsx","./src/evidence.ts","./src/live.ts","./src/main.tsx","./src/sandbox.ts","./src/wallet.ts","./vite.config.ts"],"version":"5.9.3"}

@@ -65,6 +65,8 @@ code { font-family: "DM Mono", ui-monospace, monospace; }
 .section-kicker { display: block; margin-bottom: 7px; color: var(--muted); font-size: 9px; line-height: 1.3; font-weight: 800; letter-spacing: 0; }
 
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.brand-home { padding: 0; color: inherit; background: transparent; border: 0; text-align: left; cursor: pointer; }
+.brand-home:focus-visible { outline: 2px solid var(--mint); outline-offset: 6px; border-radius: 3px; }
 .brand-symbol { width: 34px; height: 34px; display: grid; place-items: center; flex: 0 0 auto; overflow: hidden; color: #fff; background: #050708; border: 1px solid rgba(255,255,255,.14); border-radius: 5px; }
 .brand-symbol img { width: 100%; height: 100%; display: block; object-fit: cover; }
 .brand > span:last-child { display: grid; min-width: 0; }
@@ -159,6 +161,9 @@ code { font-family: "DM Mono", ui-monospace, monospace; }
 .console-title span { color: var(--muted); font-size: 8px; font-weight: 800; text-transform: uppercase; }
 .console-title strong { margin-top: 3px; font-size: 13px; }
 .console-header-actions { display: flex; align-items: center; gap: 8px; }
+.experience-switch { display: flex; align-items: center; gap: 3px; padding: 3px; background: var(--canvas-2); border: 1px solid var(--line); border-radius: 5px; }
+.experience-switch button { min-height: 30px; padding: 0 10px; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); background: transparent; border: 0; border-radius: 3px; font-size: 10px; font-weight: 800; cursor: pointer; }
+.experience-switch button.active { color: #fff; background: var(--ink); }
 .mobile-menu { display: none; }
 .workspace-page { width: min(1390px, 100%); min-height: calc(100vh - 66px); margin: 0 auto; padding: 28px; }
 
@@ -358,6 +363,10 @@ code { font-family: "DM Mono", ui-monospace, monospace; }
 .evidence-health > div > span:first-child:not(.health-signal) { color: #8d9c93; font-size: 7px; font-weight: 800; }
 .evidence-health code { overflow: hidden; color: var(--mint); font-size: 8px; text-overflow: ellipsis; }
 .evidence-table { overflow: hidden; background: var(--paper); border: 1px solid var(--line); border-top: 0; border-radius: 0 0 6px 6px; }
+.evidence-scope-heading { min-height: 66px; padding: 14px 4px 8px; display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; }
+.evidence-scope-heading.archived { margin-top: 18px; }
+.evidence-scope-heading h2 { margin: 0; font-size: 16px; }
+.live-evidence-table { border-top: 1px solid #a8d4ba; border-radius: 6px; }
 .evidence-table-head, .evidence-row { display: grid; grid-template-columns: minmax(210px, .85fr) minmax(260px, 1.5fr) 120px 72px; align-items: center; }
 .evidence-table-head { min-height: 36px; padding: 0 14px; color: var(--muted); background: var(--canvas); border-bottom: 1px solid var(--line); font-size: 7px; font-weight: 800; }
 .evidence-row { min-height: 62px; padding: 0 14px; border-bottom: 1px solid var(--line); }
@@ -406,11 +415,88 @@ code { font-family: "DM Mono", ui-monospace, monospace; }
 .toast span { font-size: 9px; font-weight: 700; }
 .toast button { width: 28px; height: 28px; display: grid; place-items: center; color: inherit; background: transparent; border: 0; border-radius: 3px; cursor: pointer; }
 
+/* Live multi-wallet sandbox */
+.live-loading { min-height: calc(100vh - 66px); display: flex; align-items: center; justify-content: center; gap: 9px; color: var(--muted); font-size: 13px; font-weight: 700; }
+.live-title-row { align-items: center; }
+.live-empty { min-height: 220px; padding: 34px; display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; align-items: center; gap: 22px; background: var(--paper); border: 1px solid var(--line); border-radius: 6px; }
+.live-empty-icon { width: 52px; height: 52px; display: grid; place-items: center; color: var(--green-dark); background: var(--mint-soft); border: 1px solid #b7dcc7; border-radius: 5px; }
+.live-empty h2 { margin: 0; font-size: 22px; }
+.live-empty p { margin: 9px 0 0; color: var(--muted); font-size: 13px; }
+.live-round-band { min-height: 160px; padding: 28px 32px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 30px; color: #fff; background: var(--ink); border: 1px solid #314238; }
+.live-round-identity .section-kicker { color: var(--mint); }
+.live-round-identity h1 { margin: 0; font-size: 32px; }
+.live-round-identity code { display: block; max-width: 560px; margin-top: 11px; overflow: hidden; color: #91a097; font-size: 10px; text-overflow: ellipsis; }
+.live-round-metrics { display: grid; grid-template-columns: repeat(3, 130px); }
+.live-round-metrics > div { min-height: 65px; padding: 9px 16px; display: grid; align-content: center; border-left: 1px solid rgba(255,255,255,.14); }
+.live-round-metrics span { color: #91a097; font-size: 10px; }
+.live-round-metrics strong { margin-top: 7px; font-size: 13px; }
+.live-action-layout { margin-top: 18px; display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(300px, .65fr); gap: 18px; align-items: stretch; }
+.live-primary-action, .live-book, .live-receipts { background: var(--paper); border: 1px solid var(--line); border-radius: 6px; }
+.live-primary-action { min-height: 330px; padding: 25px; }
+.live-role-line { min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); }
+.live-role-line span { display: inline-flex; align-items: center; gap: 7px; color: var(--green-dark); font-size: 10px; font-weight: 800; }
+.live-role-line b { color: var(--muted); font: 500 10px "DM Mono", monospace; }
+.live-primary-action > h2 { margin: 34px 0 0; font-size: 24px; }
+.live-primary-action > p { max-width: 560px; margin: 10px 0 22px; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.bid-field { width: min(370px, 100%); margin: 26px 0 20px; }
+.bid-field label, .bid-field small { display: block; color: var(--muted); font-size: 10px; font-weight: 800; }
+.bid-field > span { height: 58px; margin: 7px 0; padding: 0 15px; display: flex; align-items: center; gap: 10px; background: var(--canvas); border: 1px solid var(--line-dark); border-radius: 5px; }
+.bid-field input { width: 100%; min-width: 0; color: var(--ink); background: transparent; border: 0; outline: 0; font: 500 24px "DM Mono", monospace; }
+.bid-field b { color: var(--muted); font-size: 12px; }
+.live-book { padding: 18px; }
+.live-book-head { min-height: 34px; display: flex; align-items: center; justify-content: space-between; color: var(--muted); border-bottom: 1px solid var(--line); font-size: 10px; font-weight: 800; }
+.live-bidder { min-height: 64px; display: grid; grid-template-columns: 32px 1fr auto; align-items: center; gap: 10px; opacity: .52; border-bottom: 1px solid #e4e9e4; }
+.live-bidder.filled { opacity: 1; }
+.live-bidder > span { width: 28px; height: 28px; display: grid; place-items: center; color: var(--muted); background: var(--canvas); border: 1px solid var(--line); border-radius: 50%; font-size: 10px; font-weight: 800; }
+.live-bidder.filled > span { color: #fff; background: var(--green); border-color: var(--green); }
+.live-bidder > div { display: grid; }
+.live-bidder strong { font-size: 12px; }
+.live-bidder small { margin-top: 4px; color: var(--muted); font-size: 10px; }
+.live-bidder > b { color: var(--muted); font-size: 9px; }
+.live-deadline { min-height: 60px; display: flex; align-items: center; gap: 9px; color: var(--muted); }
+.live-deadline span { display: grid; font-size: 10px; }
+.live-deadline strong { margin-top: 3px; color: var(--ink); font-size: 11px; }
+.live-complete { min-height: 230px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; color: var(--green-dark); }
+.live-complete h2 { margin: 15px 0 0; color: var(--ink); font-size: 24px; }
+.live-complete p { max-width: 540px; margin: 9px 0 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.live-complete .button-primary, .live-complete .button-secondary { margin-top: 20px; }
+.live-receipts { margin-top: 18px; padding: 18px; }
+.live-receipts > a { min-height: 52px; display: grid; grid-template-columns: minmax(160px, .7fr) minmax(0, 1fr) 20px; align-items: center; gap: 14px; border-bottom: 1px solid var(--line); }
+.live-receipts > a:last-child { border-bottom: 0; }
+.live-receipts a > span { display: inline-flex; align-items: center; gap: 7px; color: var(--green-dark); }
+.live-receipts a b { color: var(--ink); font-size: 11px; text-transform: capitalize; }
+.live-receipts code { overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; }
+.live-alert { min-height: 52px; margin: 15px 0; padding: 10px 13px; display: flex; align-items: center; gap: 10px; color: var(--blue); background: var(--blue-soft); border: 1px solid #bfdde3; border-radius: 5px; }
+.live-alert.success { color: var(--green-dark); background: var(--mint-soft); border-color: #b7dcc7; }
+.live-alert.error { color: var(--coral); background: var(--coral-soft); border-color: #edc0b8; }
+.live-alert > span { display: grid; font-size: 11px; }
+.live-alert strong { margin-bottom: 2px; font-size: 10px; }
+.live-alert a { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 800; }
+
+/* Console text stays compact without dropping below comfortable reading sizes. */
+.console-shell .section-kicker, .console-shell .nav-label, .console-shell .console-title span { font-size: 10px; }
+.console-shell .sidebar nav button { font-size: 13px; }
+.console-shell .sidebar-network span, .console-shell .sidebar-network small { font-size: 10px; }
+.console-shell .sidebar-network strong { font-size: 12px; }
+.console-shell .console-title strong { font-size: 15px; }
+.console-shell .status-tag, .console-shell .live-pill { font-size: 10px; }
+.console-shell .workspace-hero-copy p { font-size: 14px; }
+.console-shell .pulse-line span, .console-shell .pulse-line b, .console-shell .round-summary-rows span, .console-shell .round-summary-rows strong { font-size: 11px; }
+.console-shell .pulse-live, .console-shell .wallet-flow-head > div span, .console-shell .account-action-top > div span { font-size: 10px; }
+.console-shell .wallet-flow-steps strong, .console-shell .account-state-row strong, .console-shell .account-state-row span { font-size: 11px; }
+.console-shell .wallet-flow-steps small, .console-shell .wallet-flow-note span, .console-shell .receipt-link { font-size: 10px; }
+.console-shell .wallet-flow > code, .console-shell .identity-address code { font-size: 10px; }
+.console-shell .page-title-row p, .console-shell .policy-terminal > p { font-size: 13px; }
+.console-shell .access-checks span, .console-shell .access-checks strong, .console-shell .evidence-row strong { font-size: 11px; }
+.console-shell .evidence-row code, .console-shell .evidence-health code, .console-shell .evidence-health small { font-size: 10px; }
+
 @media (max-width: 1120px) {
   .hero-copy { width: min(620px, 62vw); }
   .hero-ledger { width: 265px; }
   .workspace-hero { grid-template-columns: 1fr 320px; }
   .overview-grid { grid-template-columns: 1fr; }
+  .live-round-band { grid-template-columns: 1fr; }
+  .live-round-metrics { grid-template-columns: repeat(3, 1fr); }
   .account-action { display: grid; grid-template-columns: minmax(0, 1fr); }
   .round-timeline { grid-template-columns: repeat(4, 1fr); gap: 18px 0; }
   .round-timeline > div:nth-child(4)::before { display: none; }
@@ -452,8 +538,20 @@ code { font-family: "DM Mono", ui-monospace, monospace; }
   .console-header { height: 62px; padding: 0 12px; }
   .mobile-menu { display: inline-grid; }
   .console-title { display: none; }
+  .experience-switch { margin-right: auto; }
+  .experience-switch button { width: 34px; padding: 0; justify-content: center; font-size: 0; }
+  .experience-switch button svg { width: 15px; height: 15px; }
   .console-header .live-pill { display: none; }
   .workspace-page { min-height: calc(100vh - 62px); padding: 20px 16px; }
+  .live-empty { grid-template-columns: 48px 1fr; padding: 24px 18px; }
+  .live-empty .button-large { grid-column: 1 / -1; width: 100%; }
+  .live-round-band { margin: 0 -16px; padding: 24px 18px; }
+  .live-round-metrics { grid-template-columns: 1fr; }
+  .live-round-metrics > div { min-height: 48px; border-left: 0; border-top: 1px solid rgba(255,255,255,.14); }
+  .live-action-layout { grid-template-columns: 1fr; }
+  .live-primary-action { min-height: 300px; padding: 20px 17px; }
+  .live-role-line b { max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
+  .live-receipts > a { grid-template-columns: minmax(130px, .8fr) minmax(0, 1fr) 18px; }
   .workspace-hero { min-height: 0; grid-template-columns: 1fr; margin: -20px -16px 20px; }
   .workspace-hero-copy { padding: 36px 16px 28px; }
   .workspace-hero-copy h1 { font-size: 30px; }

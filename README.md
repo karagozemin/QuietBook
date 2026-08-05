@@ -18,7 +18,9 @@ This repository is an unaudited Stellar Testnet prototype. It is not suitable fo
 - Atomic confidential winner payment and public RWA delivery on Testnet.
 - Pre-deadline bid withdrawal and post-round losing-bid reclaim.
 - Durable SQLite event indexer with a redacted public API and direct-RPC verification.
-- Wallet-free judge replay plus Testnet-only Freighter issuer/investor mode.
+- Wallet-free judge replay plus a separate multi-wallet Testnet sandbox.
+- Browser-local confidential keys and UltraHonk bid/reclaim proving with Freighter-signed transactions.
+- Dynamic round receipts and proof hashes sourced from each new sandbox lifecycle.
 - Current-schema auditor event decryption, direct XDR linkage, and a signed private export.
 - Recipient-bound settlement disclosure with a pinned UltraHonk verification key and negative recipient/nonce/event tests.
 - Automated public privacy scan and a PRD negative-test evidence matrix.
@@ -39,6 +41,8 @@ pnpm judge
 ```
 
 Open `http://127.0.0.1:5173`. See [docs/judge-runbook.md](docs/judge-runbook.md) for the two-minute reviewer flow.
+
+The landing page's `Explore live round` action opens the multi-wallet sandbox. One connected wallet creates and opens the issuance, up to three other Testnet wallets submit confidential bids, the issuer closes and settles after the displayed ledger deadline, and losing wallets reclaim from their own local confidential state. The operator vault is stored only under ignored `.quietbook/` state; public evidence contains receipts and proof hashes, never bid openings.
 
 ## Verification
 

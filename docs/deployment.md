@@ -23,6 +23,8 @@ QUIETBOOK_INDEXER_PORT=8787 \
 pnpm dev:indexer
 ```
 
+The same process exposes the local Testnet sandbox coordinator used by `Live round`. It prepares round-specific controllers, maintains the private settlement witness vault under `.quietbook/`, and generates the operator's final proof. It binds to `127.0.0.1` intentionally. Do not expose these sandbox mutation endpoints publicly or reuse the bundled Testnet identities for production. A hosted version requires authenticated wallet challenges, TLS, secret management, rate limits, and an audited operator custody design.
+
 It stores raw confidential event XDR only in its private SQLite database. Public API responses redact raw XDR and decoded confidential payloads. Expose `/health` for readiness and retain the database volume across deploys.
 
 ## Release checks

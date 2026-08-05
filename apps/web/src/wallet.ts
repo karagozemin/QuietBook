@@ -84,7 +84,7 @@ export function freighterSigner(session: WalletSession): BrowserSigner {
   };
 }
 
-class BrowserProductChain implements ProductChain {
+export class BrowserProductChain implements ProductChain {
   readonly server: rpc.Server;
 
   constructor(readonly rpcUrl: string) {
