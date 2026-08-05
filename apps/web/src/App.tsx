@@ -310,16 +310,22 @@ function Intro({ step, onStep, onBack, onComplete }: {
   onComplete: () => void;
 }) {
   const slide = introSlides[step]!;
+  useEffect(() => {
+    if (step >= introSlides.length - 1) return;
+    const timer = window.setTimeout(() => onStep(step + 1), 4_500);
+    return () => window.clearTimeout(timer);
+  }, [onStep, step]);
+
   return (
     <div className="intro page-enter">
       <header className="intro-header">
         <Brand/>
         <div className="intro-progress" aria-label={`Introduction step ${step + 1} of ${introSlides.length}`}>
-          {introSlides.map((item, index) => <span key={item.kicker} className={index <= step ? "complete" : ""}/>) }
+          {introSlides.map((item, index) => <span key={item.kicker} className={index < step ? "complete" : index === step ? "active" : ""}/>) }
         </div>
         <Pressable className="icon-pressable" onClick={onBack}><X size={19}/><span className="sr-only">Close introduction</span></Pressable>
       </header>
-      <main className="intro-stage" key={slide.kicker}>
+      <main className="intro-stage intro-slide" key={slide.kicker}>
         <MarketCanvas phase={slide.phase} className="intro-canvas"/>
         <div className="intro-copy">
           <span className="section-kicker">{slide.kicker}</span>

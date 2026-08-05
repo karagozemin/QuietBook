@@ -34,8 +34,7 @@ test("landing, intro and verified Testnet story remain usable", async ({ page })
 
   await page.getByRole("button", { name: "Run Testnet story" }).click();
   await expect(page.getByRole("heading", { name: "The market sees participation. Not the demand curve." })).toBeVisible();
-  await page.getByRole("button", { name: "Continue" }).click();
-  await expect(page.getByRole("heading", { name: "The winner is proven against the complete book." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "The winner is proven against the complete book." })).toBeVisible({ timeout: 6_000 });
   await page.getByRole("button", { name: "Continue" }).click();
   await expect(page.getByRole("heading", { name: "Confidential payment. Public delivery. One invocation." })).toBeVisible();
   await page.getByRole("button", { name: "Enter verified run" }).click();

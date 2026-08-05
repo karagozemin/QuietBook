@@ -116,11 +116,15 @@ code { font-family: "DM Mono", ui-monospace, monospace; }
 .intro .brand-symbol { background: #050708; }
 .intro .brand small { color: #94a299; }
 .intro-progress { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
-.intro-progress span { height: 3px; background: rgba(255,255,255,.16); border-radius: 2px; }
+.intro-progress span { position: relative; height: 3px; overflow: hidden; background: rgba(255,255,255,.16); border-radius: 2px; }
 .intro-progress span.complete { background: var(--mint); }
+.intro-progress span.active::after { content: ""; position: absolute; inset: 0; background: var(--mint); transform-origin: left; animation: intro-progress 4.5s linear both; }
 .intro-header > button { justify-self: end; }
 .intro-header .icon-pressable { color: var(--ink); }
 .intro-stage { position: relative; min-height: calc(100svh - 72px); padding: 80px max(24px, calc((100vw - 1480px) / 2)); display: flex; align-items: center; overflow: hidden; animation: page-in 420ms ease both; }
+.intro-slide { animation: intro-slide-in 460ms cubic-bezier(.2,.75,.25,1) both; }
+@keyframes intro-slide-in { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes intro-progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 .intro-canvas { position: absolute; inset: 0; opacity: .42; filter: invert(1); }
 .intro-copy { position: relative; z-index: 2; width: min(720px, 58vw); }
 .intro-copy .section-kicker { color: var(--mint); }
