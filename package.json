@@ -21,12 +21,23 @@
     "smoke:controller:testnet": "pnpm --filter @quietbook/sdk exec tsx ../../scripts/smoke-controller-testnet.ts",
     "setup:round:testnet": "pnpm --filter @quietbook/sdk exec tsx ../../scripts/setup-round-testnet.ts",
     "settle:round:testnet": "pnpm --filter @quietbook/sdk exec tsx ../../scripts/settle-round-testnet.ts",
-    "dev:web": "pnpm --filter @quietbook/web dev",
-    "build:web": "pnpm --filter @quietbook/web build",
+    "reclaim:round:testnet": "pnpm --filter @quietbook/sdk exec tsx ../../scripts/reclaim-round-testnet.ts",
+    "smoke:withdrawal:testnet": "pnpm --filter @quietbook/sdk exec tsx ../../scripts/smoke-withdrawal-testnet.ts",
+    "audit:round:testnet": "pnpm --filter @quietbook/sdk exec tsx ../../scripts/audit-round-testnet.ts",
+    "disclose:settlement:testnet": "pnpm --filter @quietbook/sdk exec tsx ../../scripts/disclose-settlement-testnet.ts",
+    "dev:web": "pnpm build:sdk && pnpm --filter @quietbook/web dev",
+    "dev:indexer": "pnpm --filter @quietbook/indexer dev",
+    "judge": "pnpm build:sdk && VITE_INDEXER_URL=http://127.0.0.1:8787 pnpm --parallel --filter @quietbook/indexer --filter @quietbook/web run dev",
+    "sync:indexer": "pnpm --filter @quietbook/indexer sync",
+    "build:indexer": "pnpm --filter @quietbook/indexer build",
+    "test:indexer": "pnpm --filter @quietbook/indexer test",
+    "build:web": "pnpm build:sdk && pnpm --filter @quietbook/web build",
     "test:web": "pnpm --filter @quietbook/web test:e2e",
-    "test": "pnpm test:contracts && pnpm build:sdk && pnpm test:sdk",
+    "test": "pnpm test:contracts && pnpm test:circuits && pnpm build:sdk && pnpm test:sdk && pnpm test:proof && pnpm test:indexer && pnpm test:privacy && pnpm --filter @quietbook/web build && pnpm test:web",
     "test:contracts": "cargo test --manifest-path contracts/Cargo.toml",
+    "test:circuits": "cd circuits/max_bid && ../../.tools/noir/nargo test && cd ../disclose_settlement && ../../.tools/noir/nargo test",
     "test:sdk": "pnpm --filter @quietbook/sdk test",
-    "test:proof": "pnpm --filter @quietbook/sdk test:proof"
+    "test:proof": "pnpm --filter @quietbook/sdk test:proof",
+    "test:privacy": "pnpm --filter @quietbook/sdk exec tsx ../../scripts/check-public-privacy.ts"
   }
 }

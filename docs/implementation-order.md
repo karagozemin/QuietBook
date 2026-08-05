@@ -40,7 +40,12 @@ Local exit condition: complete. Testnet reproduction remains part of the evidenc
 
 - [x] Archive one local and one Testnet end-to-end run.
 - [x] Create a reviewer evidence index before making public claims.
-- Build the judge flow, issuer/investor/public views, and blocked unauthorized path.
-- Add the auditor split view, then recipient-bound disclosure.
+- [x] Build the judge flow, issuer/investor/public views, and blocked unauthorized path.
+- [x] Add live RPC verification with evidence-only fallback.
+- [x] Add pre-deadline bid withdrawal and post-round losing-bid reclaim with Testnet evidence.
+- [x] Build the event indexer/evidence store.
+- [x] Add the typed product SDK and Testnet-validated issuer/investor Freighter mode.
+- [x] Add the auditor split view, signed private audit export, and recipient-bound disclosure.
+- [x] Add privacy scanning and the PRD negative-test matrix.
 
 The app must never persist or emit plaintext bids in URLs, logs, analytics, public receipts, or evidence manifests.

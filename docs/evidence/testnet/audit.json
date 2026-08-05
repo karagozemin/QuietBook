@@ -1,0 +1,53 @@
+{
+  "generatedAt": "2026-08-05T15:46:12.684Z",
+  "network": "testnet",
+  "roundId": "65b6573282e6f4973ffc3623c4509f7186ed777f2020e0ca59c3e7b6120abbc6",
+  "auditor": {
+    "id": 0,
+    "keyVersion": 0,
+    "publicKeyMatchesRegistry": true,
+    "registrationTransaction": "30d2a30ce66e9eb2f5377ad0b8e68533a87edcebad007f08e1c5e3f5e67a4eda",
+    "rotationCount": 0
+  },
+  "eventVerification": {
+    "indexedEvents": 4,
+    "directRpcXdrMatches": true,
+    "bidDelegationsDecrypted": 3,
+    "settlementChannelsAgree": true,
+    "settlementLinkageVerified": true,
+    "references": [
+      {
+        "type": "set_spender",
+        "ledger": 3983104,
+        "transaction": "dde802e6f9c59264dd043fbbba65b164d3b1c2889147b7b96541502110033ac0",
+        "eventId": "0017107301416677376-0000000000"
+      },
+      {
+        "type": "set_spender",
+        "ledger": 3983109,
+        "transaction": "c4e42b639c4d4819065df4dfc78dc3dbacb4d5f28e550630f6224515059ef526",
+        "eventId": "0017107322891444224-0000000000"
+      },
+      {
+        "type": "set_spender",
+        "ledger": 3983114,
+        "transaction": "daef1002cdc624eea320e66badc08bab555e684d2ad32ca0baa2c03a9a7f6e3c",
+        "eventId": "0017107344366297088-0000000000"
+      },
+      {
+        "type": "spender_transfer",
+        "ledger": 3983199,
+        "transaction": "3a47b09ea1def84f1bef4bb71a00fab2080cfb5e5697a84d86c549a97f89246d",
+        "eventId": "0017107709438533632-0000000000"
+      }
+    ]
+  },
+  "exportIntegrity": {
+    "privateExportSha256": "3cc32b39d03532e52bfe3d27c882e6749e905e4d024d2da75b35dfcb007d08a7",
+    "canonicalPayloadSha256": "88f883496799c167377e43c77a9601768ea04a0130a6b095b01c73c8b9528134",
+    "signer": "GBDVJYK5IH23T22CV5P5OSFLNTE3PE5JD5445F3JKRVTJDDUBC2ZMWY2",
+    "signature": "eij680K2jbsYAe9T40ZMEOoIJT2/dLGjHA2qS4boyOfSl6gPydfkc0bFz2ctJZfHKAWHXaXHZsPft5szGJeFBw==",
+    "signatureVerified": true
+  },
+  "privacyNote": "Decrypted bid, payment, balance, randomness and auditor secret values remain only in the ignored private export."
+}

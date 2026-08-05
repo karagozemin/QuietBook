@@ -1,0 +1,36 @@
+{
+  "generatedAt": "2026-08-05T15:17:16.749Z",
+  "network": "testnet",
+  "market": "CC4TZX3E2NRXPN4QBLMRZHICZD5WSWGPSTI232MH5WRJB4VDK4JEZD2H",
+  "controller": "CD3NEHAE26Y7OJ67OLMAL7JGVA72QK5O7KHP3DNZUFRV74CHYW6XTB4W",
+  "roundId": "24d952c0c04cf5e163499889da84b584509cc0d51e2eca0c12ee766f4bcfba11",
+  "bidder": "GCT7CLVOOIPU5GW6JTISXLJ5V6G2737OD4RUVMFI6PVHJCSIKNSCUNSJ",
+  "marketWasmSha256": "5ee6a772e919d504cc46707aa5519a75fcbe6c1a8bc6b09b0096d3a5be1cc10e",
+  "deploymentTransactions": [
+    "ec424e57fbe51adc677699c1fdc462466da562fbf23ec91bbcb2a9dd41db19f6",
+    "116755e42ec9174198faaf562a2f984d303b11a0ecd1ce180dcac303954713e3",
+    "792fc02346bdddc084daa5a45c9db1f0d0516deec23304f16f74ae6bb960f491"
+  ],
+  "transactions": {
+    "createRound": "4e6857884bd0f837b4f4892059adbbecb771372e74d80f7ec805dde0d6007211",
+    "registerController": "1e871732639d8c89376081f4ec44d1f69faae5d671deca750eed5710e945e6c0",
+    "mintRwa": "8a0d8809f1cb07881ba8a13fef6b89acdbb17f6ee36823533d7365f0860c3bfb",
+    "fundRound": "cb87922f4a999f325cdff1dfd9c08b0e620985820ae0a7bbc48d99bb677f4946",
+    "openRound": "afb6577d9cd4bbdf8fd7757fc93e9da405cbe7dd4b4d9cb59936540ddbd88904",
+    "setSpender": "ce4369c4940edfd5b3d6c5becc0c9fa79bd68747999144ca28f830417df85660",
+    "registerBid": "51503402b0b44004b3cb4296aac390ed4ddc380b2d38e91f4c7aa7a248ac4f94",
+    "withdrawBid": "604f92c55efb715466bcffcbd7bdb4ca3b173840fac9cd1c8b2e237c2d467271"
+  },
+  "proofSha256": {
+    "registerController": "68cb5e1c415153b38b99da44754a51994246e342cf95369a1c53f5a07408312b",
+    "setSpender": "7ba674999c45c6b46de75f0b1bc6c8f08f1e3c33d2906d7fe3539e96de557411",
+    "withdrawBid": "8ff6256051cb1b3d77fa4b3cfdd3280674f27ffb0d28cc2bcf6ba34bb00f0a03"
+  },
+  "readBack": {
+    "roundStatus": "Open",
+    "bidderCount": 0,
+    "bidActive": false,
+    "delegationRemoved": true
+  },
+  "privacyNote": "No bid value, balance opening, confidential key, or witness is included."
+}

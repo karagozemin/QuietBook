@@ -1,0 +1,149 @@
+import {
+  getNetwork,
+  isConnected,
+  requestAccess,
+  signTransaction,
+} from "@stellar/freighter-api";
+import {
+  Account,
+  BASE_FEE,
+  Contract,
+  Networks,
+  TransactionBuilder,
+  rpc,
+  type xdr,
+} from "@stellar/stellar-sdk";
+import {
+  QuietBookClient,
+  type ProductChain,
+} from "@quietbook/sdk/product";
+import { testnetEvidence } from "./evidence";
+
+const NULL_ACCOUNT = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
+const POLL_INTERVAL_MS = 1_500;
+const MAX_POLL_ATTEMPTS = 40;
+
+export type WalletSession = {
+  address: string;
+  network: string;
+  networkPassphrase: string;
+};
+
+export type BrowserSigner = {
+  publicKey: string;
+  sign(txXdrBase64: string): Promise<string>;
+};
+
+function freighterError(error: unknown, fallback: string): Error {
+  if (error && typeof error === "object" && "message" in error) {
+    return new Error(String(error.message));
+  }
+  return new Error(fallback);
+}
+
+export async function connectFreighter(): Promise<WalletSession> {
+  const connection = await isConnected();
+  if (connection.error || !connection.isConnected) {
+    throw new Error("Freighter extension was not detected");
+  }
+  const access = await requestAccess();
+  if (access.error) throw freighterError(access.error, "Freighter access was denied");
+  if (!access.address) throw new Error("Freighter did not return an account");
+
+  const network = await getNetwork();
+  if (network.error) throw freighterError(network.error, "Could not read Freighter network");
+  if (network.networkPassphrase !== Networks.TESTNET) {
+    throw new Error("Switch Freighter to Stellar Testnet to enable QuietBook actions");
+  }
+  return {
+    address: access.address,
+    network: network.network,
+    networkPassphrase: network.networkPassphrase,
+  };
+}
+
+export function freighterSigner(session: WalletSession): BrowserSigner {
+  return {
+    publicKey: session.address,
+    async sign(txXdrBase64: string) {
+      const current = await getNetwork();
+      if (current.error) throw freighterError(current.error, "Could not verify Freighter network");
+      if (current.networkPassphrase !== Networks.TESTNET) {
+        throw new Error("Freighter network changed; switch back to Stellar Testnet");
+      }
+      const signed = await signTransaction(txXdrBase64, {
+        address: session.address,
+        networkPassphrase: Networks.TESTNET,
+      });
+      if (signed.error) throw freighterError(signed.error, "Freighter rejected the transaction");
+      if (!signed.signedTxXdr) throw new Error("Freighter returned no signed transaction");
+      return signed.signedTxXdr;
+    },
+  };
+}
+
+class BrowserProductChain implements ProductChain {
+  readonly server: rpc.Server;
+
+  constructor(readonly rpcUrl: string) {
+    this.server = new rpc.Server(rpcUrl, { allowHttp: rpcUrl.startsWith("http://") });
+  }
+
+  async simulate(contractId: string, method: string, args: xdr.ScVal[]): Promise<xdr.ScVal> {
+    const source = await this.server.getAccount(NULL_ACCOUNT).catch(() => new Account(NULL_ACCOUNT, "0"));
+    const transaction = new TransactionBuilder(source, {
+      fee: BASE_FEE,
+      networkPassphrase: Networks.TESTNET,
+    })
+      .addOperation(new Contract(contractId).call(method, ...args))
+      .setTimeout(30)
+      .build();
+    const simulation = await this.server.simulateTransaction(transaction);
+    if (rpc.Api.isSimulationError(simulation)) {
+      throw new Error(`simulate ${method} failed: ${simulation.error}`);
+    }
+    if (!simulation.result) throw new Error(`simulate ${method} returned no result`);
+    return simulation.result.retval;
+  }
+
+  async invoke(contractId: string, method: string, args: xdr.ScVal[], signer: BrowserSigner) {
+    const source = await this.server.getAccount(signer.publicKey);
+    const transaction = new TransactionBuilder(source, {
+      fee: BASE_FEE,
+      networkPassphrase: Networks.TESTNET,
+    })
+      .addOperation(new Contract(contractId).call(method, ...args))
+      .setTimeout(180)
+      .build();
+    const simulation = await this.server.simulateTransaction(transaction);
+    if (rpc.Api.isSimulationError(simulation)) {
+      throw new Error(`simulate ${method} failed: ${simulation.error}`);
+    }
+    const assembled = rpc.assembleTransaction(transaction, simulation).build();
+    const signedXdr = await signer.sign(assembled.toXDR());
+    const signed = TransactionBuilder.fromXDR(signedXdr, Networks.TESTNET);
+    const submitted = await this.server.sendTransaction(signed);
+    if (submitted.status === "ERROR") throw new Error(`${method} was rejected by Testnet`);
+
+    for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, POLL_INTERVAL_MS));
+      const result = await this.server.getTransaction(submitted.hash);
+      if (result.status === rpc.Api.GetTransactionStatus.NOT_FOUND) continue;
+      if (result.status === rpc.Api.GetTransactionStatus.FAILED) {
+        throw new Error(`${method} failed on Testnet (${submitted.hash})`);
+      }
+      return { hash: submitted.hash, status: result.status, returnValue: result.returnValue };
+    }
+    throw new Error(`${method} confirmation timed out (${submitted.hash})`);
+  }
+}
+
+export function productClient() {
+  return new QuietBookClient(
+    new BrowserProductChain(testnetEvidence.deployment.rpcUrl),
+    {
+      market: testnetEvidence.deployment.contracts.market.contractId,
+      confidentialToken: testnetEvidence.deployment.contracts.confidentialToken.contractId,
+    },
+  );
+}

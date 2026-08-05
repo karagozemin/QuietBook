@@ -81,3 +81,30 @@ fn settlement_payment_must_equal_winning_bid() {
     run_case(300, 200, 100, true, 50, 0, 299);
 }
 
+#[test(should_fail)]
+fn registered_bidder_cannot_be_padded_out() {
+    let c_0 = commit(300, 101);
+    let c_1 = commit(200, 202);
+    let registered_c_2 = commit(100, 303);
+    let payment = commit(300, 404);
+    main(
+        0x5155494554424f4f4b,
+        c_0.x, c_0.y, c_1.x, c_1.y, registered_c_2.x, registered_c_2.y,
+        true, true, false, 50, 0, payment.x, payment.y,
+        300, 101, 200, 202, 0, 0, 404,
+    );
+}
+
+#[test(should_fail)]
+fn bidder_openings_cannot_be_swapped() {
+    let c_0 = commit(300, 101);
+    let c_1 = commit(200, 202);
+    let c_2 = commit(100, 303);
+    let payment = commit(300, 404);
+    main(
+        0x5155494554424f4f4b,
+        c_0.x, c_0.y, c_1.x, c_1.y, c_2.x, c_2.y,
+        true, true, true, 50, 0, payment.x, payment.y,
+        200, 202, 300, 101, 100, 303, 404,
+    );
+}

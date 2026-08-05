@@ -16,5 +16,10 @@ All evidence in this directory is for the unaudited Stellar Testnet prototype. N
 | Three eligible confidential bidders register; the unauthorized account is rejected | [`testnet/round-setup.json`](testnet/round-setup.json) |
 | Market statement matches the Max-Bid proof statement byte-for-byte | [`testnet/settlement.json`](testnet/settlement.json) |
 | Confidential winner payment and public RWA delivery settle atomically | [`testnet/settlement.json`](testnet/settlement.json) |
+| Both losing bidders reclaim their confidential allowance through `revoke_spender` | [`testnet/reclaim.json`](testnet/reclaim.json) |
+| A bidder atomically revokes its delegation and unregisters through the market before deadline | [`testnet/withdrawal.json`](testnet/withdrawal.json) |
+| Auditor key version, event XDR linkage, decryption channels and signed private export verify | [`testnet/audit.json`](testnet/audit.json) |
+| One settlement fact is proven to a designated recipient; wrong nonce, recipient and event fail | [`testnet/disclosure.json`](testnet/disclosure.json) |
+| Required negative scenarios map to deterministic tests or recorded Testnet evidence | [`testnet/negative-tests.json`](testnet/negative-tests.json) |
 
 The final settlement transaction is [`3a47b09e...9246d`](https://stellar.expert/explorer/testnet/tx/3a47b09ea1def84f1bef4bb71a00fab2080cfb5e5697a84d86c549a97f89246d). Independent reads after confirmation returned `Settled`, the expected public winner, a registered controller, the stored Max-Bid proof hash, and the full RWA lot in the winner's balance.

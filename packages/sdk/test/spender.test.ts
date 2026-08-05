@@ -3,6 +3,7 @@ import { xdr } from "@stellar/stellar-sdk";
 import { deriveKeys } from "@ctd/sdk";
 import {
   buildAccountBoundRegisterWitness,
+  encodeRevokeSpenderData,
   encodeSetSpenderData,
   encodeSpenderTransferData,
 } from "../src/index.js";
@@ -22,6 +23,7 @@ assert.notEqual(registerA.inputs._acct_f, registerB.inputs._acct_f);
 
 assert.equal(fixture.setSpender.delegation.value, 10_100n);
 assert.equal(fixture.setSpender.nextSpendable.value, 9_900n);
+assert.equal(fixture.revokeSpender.nextSpendable.value, 20_000n);
 assert.equal(fixture.spenderTransfer.nextDelegation.value, 0n);
 assert.equal(fixture.maxBid.winnerIndex, 0);
 assert.equal(fixture.maxBid.winnerValue, 10_100n);
@@ -32,6 +34,7 @@ assert.notDeepEqual(
 
 for (const encoded of [
   encodeSetSpenderData(fixture.setSpender, new Uint8Array([1, 2, 3])),
+  encodeRevokeSpenderData(fixture.revokeSpender, new Uint8Array([7, 8, 9])),
   encodeSpenderTransferData(fixture.spenderTransfer, new Uint8Array([4, 5, 6])),
 ]) {
   const outer = xdr.ScVal.fromXDR(encoded.bytes(), "raw");

@@ -36,6 +36,7 @@ type BidderState = {
   privateBid: string;
   transactions: Record<string, string>;
   delegation?: { value: string; randomness: string; dvk: string; sigmaA: string };
+  spendable?: { value: string; randomness: string };
 };
 
 type State = {
@@ -164,6 +165,10 @@ async function main() {
           randomness: toHex32(witness.delegation.randomness),
           dvk: toHex32(witness.delegation.dvk),
           sigmaA: toHex32(witness.delegation.sigmaA),
+        };
+        bidder.spendable = {
+          value: witness.nextSpendable.value.toString(),
+          randomness: toHex32(witness.nextSpendable.randomness),
         };
         save(state);
       }

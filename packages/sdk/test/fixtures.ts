@@ -1,6 +1,7 @@
 import { H, deriveKeys, scalarMul } from "@ctd/sdk";
 import {
   buildMaxBidWitness,
+  buildRevokeSpenderWitness,
   buildSetSpenderWitness,
   buildSpenderTransferWitness,
 } from "../src/index.js";
@@ -40,6 +41,19 @@ export function buildFixture() {
     rE: 0x555n,
   });
 
+  const revokeSpender = buildRevokeSpenderWitness({
+    ownerKeys,
+    spendableValue: setSpender.nextSpendable.value,
+    spendableRandomness: setSpender.nextSpendable.randomness,
+    allowance: setSpender.delegation.value,
+    allowanceRandomness: setSpender.delegation.randomness,
+    allowanceSalt: setSpender.delegation.sigmaA,
+    spenderId: 0x5151n,
+    ownerAuditorKey,
+    sigma: 0x666n,
+    rE: 0x777n,
+  });
+
   const maxBid = buildMaxBidWitness({
     roundDomain: 0x5155494554424f4f4bn,
     bids: [
@@ -55,5 +69,5 @@ export function buildFixture() {
     payment: spenderTransfer.paymentOpening,
   });
 
-  return { setSpender, spenderTransfer, maxBid };
+  return { ownerKeys, spenderKeys, recipientKeys, setSpender, revokeSpender, spenderTransfer, maxBid };
 }

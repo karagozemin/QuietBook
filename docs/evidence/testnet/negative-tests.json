@@ -1,0 +1,19 @@
+{
+  "generatedAt": "2026-08-05T16:00:00.000Z",
+  "scope": "local deterministic and recorded Testnet negative evidence",
+  "scenarios": [
+    { "claim": "Unauthorized investor rejected", "status": "passed", "evidence": "contracts/market/src/test.rs::unauthorized_bid_is_rejected_without_registration + round-setup.json" },
+    { "claim": "Bid without live delegation rejected", "status": "passed", "evidence": "contracts/market/src/test.rs::missing_delegation_is_rejected" },
+    { "claim": "Late bid and withdrawal rejected without partial state", "status": "passed", "evidence": "contracts/market/src/test.rs::bid_registration_and_withdrawal_fail_after_deadline" },
+    { "claim": "Registered bidder cannot be omitted", "status": "passed", "evidence": "circuits/max_bid/src/tests.nr::registered_bidder_cannot_be_padded_out" },
+    { "claim": "Bidder commitment order cannot be swapped", "status": "passed", "evidence": "circuits/max_bid/src/tests.nr::bidder_openings_cannot_be_swapped" },
+    { "claim": "Non-maximum winner rejected", "status": "passed", "evidence": "circuits/max_bid/src/tests.nr::non_maximum_bid_cannot_win" },
+    { "claim": "Winner below reserve rejected", "status": "passed", "evidence": "circuits/max_bid/src/tests.nr::reserve_must_be_met" },
+    { "claim": "Wrong controller token, issuer or deadline rejected", "status": "passed", "evidence": "contracts/market/src/test.rs::controller_configuration_mismatch_blocks_opening" },
+    { "claim": "Duplicate settlement rejected", "status": "passed", "evidence": "contracts/market/src/test.rs::settled_round_cannot_be_finalized_twice" },
+    { "claim": "Revoked or expired delegation rejected", "status": "passed", "evidence": "contracts/market/src/test.rs::invalid_winner_and_revoked_delegation_are_rejected + close_excludes_a_bidder_that_revoked_outside_the_market" },
+    { "claim": "Wrong auditor key fails", "status": "passed", "evidence": "packages/sdk/test/audit.test.ts" },
+    { "claim": "Wrong disclosure nonce, recipient and event fail", "status": "passed", "evidence": "docs/evidence/testnet/disclosure.json" }
+  ],
+  "privacyNote": "This matrix contains test identifiers and boolean outcomes only; no confidential values or witnesses are included."
+}

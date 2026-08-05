@@ -9,7 +9,7 @@ test("verified judge flow remains usable", async ({ page }) => {
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /QBNOTE-26/ })).toBeVisible();
-  await expect(page.getByText("Live RPC verified", { exact: true })).toBeVisible({ timeout: 12_000 });
+  await expect(page.getByText(/^(Indexer \+ RPC|Live RPC) verified$/)).toBeVisible({ timeout: 12_000 });
 
   const dimensions = await page.evaluate(() => ({
     client: document.documentElement.clientWidth,
@@ -25,6 +25,12 @@ test("verified judge flow remains usable", async ({ page }) => {
   for (const role of ["Issuer", "Investor", "Auditor", "Public"]) {
     await page.getByRole("tab", { name: role, exact: true }).click();
   }
+  await page.getByRole("tab", { name: "Auditor", exact: true }).click();
+  await expect(page.getByText("Recipient disclosure", { exact: true })).toBeVisible();
+  await page.getByRole("tab", { name: "Investor", exact: true }).click();
+  await page.getByRole("button", { name: "Connect wallet" }).click();
+  await expect(page.getByText("Freighter extension was not detected", { exact: true })).toBeVisible({ timeout: 4_000 });
+  await page.getByRole("tab", { name: "Public", exact: true }).click();
 
   await page.locator(".round-actions").getByRole("button", { name: "Evidence" }).click();
   await expect(page.getByRole("heading", { name: "Atomic settlement" })).toBeVisible();

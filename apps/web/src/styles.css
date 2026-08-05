@@ -149,7 +149,21 @@ th:nth-child(5), td:nth-child(5) { width: 60px; text-align: center; }
 .state-row strong { display: inline-flex; align-items: center; gap: 4px; text-align: right; overflow-wrap: anywhere; }
 .state-row strong.good { color: var(--green); }
 .state-row strong.hidden { color: #738078; }
+.wallet-panel { margin-top: 14px; padding: 11px; background: #f7f9f7; border: 1px solid var(--line); border-radius: 5px; }
+.wallet-panel.error { background: #fffafa; border-color: #e9c9c7; }
+.wallet-panel-head { min-height: 28px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.wallet-panel-head > span { display: inline-flex; align-items: center; gap: 6px; color: #536159; font-size: 8px; font-weight: 850; }
+.wallet-panel-head button { min-height: 28px; padding: 0 8px; color: white; background: var(--ink); border: 1px solid var(--ink); border-radius: 3px; font-size: 9px; font-weight: 750; cursor: pointer; }
+.wallet-panel-head button:disabled { opacity: .55; cursor: wait; }
+.wallet-panel.connected .wallet-panel-head button { color: #536159; background: white; border-color: var(--line-dark); }
+.wallet-account { display: grid; gap: 3px; margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line); }
+.wallet-account strong { font: 700 9px ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.wallet-account span { color: var(--muted); font-size: 8px; }
+.wallet-panel p { margin: 9px 0 0; color: var(--muted); font-size: 9px; line-height: 1.45; }
+.wallet-panel p.wallet-error { color: var(--red); }
+.wallet-final { display: flex; align-items: center; gap: 6px; margin-top: 9px; padding: 8px; color: var(--green); background: var(--green-soft); border-radius: 3px; font-size: 8px; font-weight: 700; }
 .auditor-lock { display: flex; align-items: center; gap: 12px; padding: 13px; background: #f2f5f3; border: 1px solid var(--line); border-radius: 5px; }
+.auditor-lock.verified { background: var(--green-soft); border-color: #c8e3d5; }
 .lock-visual { width: 42px; height: 42px; display: grid; place-items: center; flex: 0 0 auto; background: #dfe7e2; color: #43534a; border-radius: 4px; }
 .auditor-lock strong, .auditor-lock span { display: block; }
 .auditor-lock strong { font-size: 11px; }

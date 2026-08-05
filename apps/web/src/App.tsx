@@ -27,6 +27,7 @@ import {
   ShieldCheck,
   Square,
   Users,
+  Wallet,
   X,
 } from "lucide-react";
 import QRCode from "qrcode";
@@ -40,6 +41,7 @@ import {
   testnetEvidence,
 } from "./evidence";
 import type { LiveSnapshot } from "./live";
+import type { WalletSession } from "./wallet";
 
 type Page = "round" | "evidence" | "contracts";
 type Role = "public" | "issuer" | "investor" | "auditor";
@@ -47,6 +49,11 @@ type LiveState =
   | { status: "checking" }
   | { status: "verified" | "mismatch"; snapshot: LiveSnapshot }
   | { status: "fallback"; error: string };
+type WalletState =
+  | { status: "disconnected" }
+  | { status: "connecting" }
+  | { status: "connected"; session: WalletSession; roundStatus: string }
+  | { status: "error"; message: string };
 
 type DemoStep = {
   label: string;
@@ -82,6 +89,8 @@ const contracts = [
   ["RWA token", testnetEvidence.deployment.contracts.rwaToken],
   ["Confidential verifier", testnetEvidence.deployment.contracts.confidentialVerifier],
   ["Auditor registry", testnetEvidence.deployment.contracts.confidentialAuditor],
+  ["Lifecycle market", { contractId: testnetEvidence.withdrawal.market }],
+  ["Lifecycle controller", { contractId: testnetEvidence.withdrawal.controller }],
 ] as const;
 
 function IconButton({
@@ -142,7 +151,7 @@ function LiveVerificationBar({ state, refresh }: { state: LiveState; refresh: ()
   const title = state.status === "checking"
     ? "Checking Testnet"
     : verified
-      ? "Live RPC verified"
+      ? state.snapshot.indexer === "verified" ? "Indexer + RPC verified" : "Live RPC verified"
       : mismatch
         ? "Live mismatch detected"
         : "Evidence fallback active";
@@ -150,7 +159,7 @@ function LiveVerificationBar({ state, refresh }: { state: LiveState; refresh: ()
     ? "Reading market, controller and settlement state"
     : state.status === "fallback"
       ? "Public RPC unavailable · verified replay remains available"
-      : `${state.snapshot.matchedCount}/${state.snapshot.checks.length} checks matched · ledger ${state.snapshot.latestLedger.toLocaleString()}`;
+      : `${state.snapshot.matchedCount}/${state.snapshot.checks.length} checks matched · ${state.snapshot.indexer === "verified" ? "durable event cache · " : "direct RPC · "}ledger ${state.snapshot.latestLedger.toLocaleString()}`;
 
   return (
     <div className={`live-verification ${state.status}`} role="status" title={state.status === "fallback" ? state.error : undefined}>
@@ -285,7 +294,7 @@ function ParticipantsTable() {
                   <div className="identity-cell"><span className="identity-avatar">{participant.registrationIndex + 1}</span><div><strong>{participant.alias}</strong><span>{compact(participant.account)}</span></div></div>
                 </td>
                 <td><span className="sealed-state"><LockKeyhole size={14} /> Bid sealed</span></td>
-                <td>{participant.winner ? <span className="winner-state"><BadgeCheck size={14} /> Winner</span> : <span className="muted-state">Not allocated</span>}</td>
+                <td>{participant.winner ? <span className="winner-state"><BadgeCheck size={14} /> Winner</span> : participant.reclaimTransaction ? <span className="winner-state"><Check size={14} /> Reclaimed</span> : <span className="muted-state">Not allocated</span>}</td>
                 <td><a className="table-link" href={explorerTransaction(participant.registrationTransaction)} target="_blank" rel="noreferrer" aria-label={`Open ${participant.alias} registration transaction`}><ArrowUpRight size={16} /></a></td>
               </tr>
             ))}
@@ -303,7 +312,19 @@ function ParticipantsTable() {
   );
 }
 
-function RolePanel({ role, setRole }: { role: Role; setRole: (role: Role) => void }) {
+function RolePanel({
+  role,
+  setRole,
+  wallet,
+  connectWallet,
+  disconnectWallet,
+}: {
+  role: Role;
+  setRole: (role: Role) => void;
+  wallet: WalletState;
+  connectWallet: () => void;
+  disconnectWallet: () => void;
+}) {
   return (
     <section className="visibility-section">
       <div className="section-heading compact-heading">
@@ -332,8 +353,8 @@ function RolePanel({ role, setRole }: { role: Role; setRole: (role: Role) => voi
         </div>
         <div className="role-view">
           {role === "public" && <PublicRole />}
-          {role === "issuer" && <IssuerRole />}
-          {role === "investor" && <InvestorRole />}
+          {role === "issuer" && <IssuerRole wallet={wallet} connectWallet={connectWallet} disconnectWallet={disconnectWallet} />}
+          {role === "investor" && <InvestorRole wallet={wallet} connectWallet={connectWallet} disconnectWallet={disconnectWallet} />}
           {role === "auditor" && <AuditorRole />}
         </div>
       </div>
@@ -345,17 +366,35 @@ function PublicRole() {
   return <><div className="panel-label"><Network size={15} /> PUBLIC PROCESS STATE</div><div className="state-stack"><StateRow label="Participant set" value="Frozen · 3 accounts"/><StateRow label="Winner proof" value="Verified" good/><StateRow label="Settlement" value="Complete" good/><StateRow label="RWA delivery" value="1.0000000 QBNOTE" good/></div></>;
 }
 
-function IssuerRole() {
-  return <><div className="panel-label"><Landmark size={15} /> ISSUER VIEW</div><div className="state-stack"><StateRow label="Round terms" value="Immutable" good/><StateRow label="Escrow" value="Delivered" good/><StateRow label="Payment receipt" value="Confidential" hidden/><StateRow label="Finalization" value={compact(testnetEvidence.settlement.finalizeTransaction)}/></div></>;
+function IssuerRole({ wallet, connectWallet, disconnectWallet }: WalletPanelProps) {
+  const isIssuer = wallet.status === "connected" && wallet.session.address === testnetEvidence.deployment.roles.issuer;
+  return <><div className="panel-label"><Landmark size={15} /> ISSUER VIEW</div><div className="state-stack"><StateRow label="Round terms" value="Immutable" good/><StateRow label="Escrow" value="Delivered" good/><StateRow label="Payment receipt" value="Confidential" hidden/><StateRow label="Finalization" value={compact(testnetEvidence.settlement.finalizeTransaction)}/></div><WalletPanel wallet={wallet} connectWallet={connectWallet} disconnectWallet={disconnectWallet} roleMessage={isIssuer ? "Issuer account verified" : wallet.status === "connected" ? "Connected account is not this round's issuer" : "Connect the issuer account to manage a writable round"}/></>;
 }
 
-function InvestorRole() {
+function InvestorRole({ wallet, connectWallet, disconnectWallet }: WalletPanelProps) {
   const winner = participants.find((participant) => participant.winner)!;
-  return <><div className="panel-label"><Users size={15} /> INVESTOR VIEW</div><div className="state-stack"><StateRow label="Selected account" value={winner.alias}/><StateRow label="Delegation" value="Consumed at settlement" good/><StateRow label="Result" value="Won" good/><StateRow label="Other bid values" value="Not visible" hidden/></div></>;
+  const participant = wallet.status === "connected" ? participants.find((item) => item.account === wallet.session.address) : undefined;
+  const roleMessage = participant
+    ? `${participant.alias} · ${participant.winner ? "winning delegation consumed" : "losing delegation reclaimed"}`
+    : wallet.status === "connected"
+      ? "Connected account did not participate in this round"
+      : "Connect an investor account to load its private action state";
+  return <><div className="panel-label"><Users size={15} /> INVESTOR VIEW</div><div className="state-stack"><StateRow label="Selected account" value={participant?.alias ?? winner.alias}/><StateRow label="Delegation" value={participant ? participant.winner ? "Consumed at settlement" : "Reclaimed" : "Account-bound"} good={Boolean(participant)}/><StateRow label="Result" value={participant ? participant.winner ? "Won" : "Lost" : "Connect to resolve"} good={Boolean(participant)}/><StateRow label="Other bid values" value="Not visible" hidden/></div><WalletPanel wallet={wallet} connectWallet={connectWallet} disconnectWallet={disconnectWallet} roleMessage={roleMessage}/></>;
+}
+
+type WalletPanelProps = {
+  wallet: WalletState;
+  connectWallet: () => void;
+  disconnectWallet: () => void;
+};
+
+function WalletPanel({ wallet, connectWallet, disconnectWallet, roleMessage }: WalletPanelProps & { roleMessage: string }) {
+  const connected = wallet.status === "connected";
+  return <div className={`wallet-panel ${wallet.status}`}><div className="wallet-panel-head"><span><Wallet size={14}/> FREIGHTER · TESTNET</span>{connected ? <button type="button" onClick={disconnectWallet}>Disconnect</button> : <button type="button" onClick={connectWallet} disabled={wallet.status === "connecting"}>{wallet.status === "connecting" ? "Connecting..." : "Connect wallet"}</button>}</div>{connected && <div className="wallet-account"><strong>{compact(wallet.session.address, 10, 8)}</strong><span>{wallet.session.network} · round {wallet.roundStatus}</span></div>}<p className={wallet.status === "error" ? "wallet-error" : ""}>{wallet.status === "error" ? wallet.message : roleMessage}</p>{connected && wallet.roundStatus === "Settled" && <div className="wallet-final"><Check size={14}/><span>Archived round is read-only. No transaction is required.</span></div>}</div>;
 }
 
 function AuditorRole() {
-  return <><div className="panel-label"><ShieldCheck size={15} /> AUTHORIZED AUDITOR VIEW</div><div className="auditor-lock"><div className="lock-visual"><KeyRound size={24}/></div><div><strong>Viewing key not loaded</strong><span>Public build exposes ciphertext references only.</span></div></div><div className="state-stack compact"><StateRow label="Auditor key version" value="0"/><StateRow label="Settlement event" value="Bound" good/><StateRow label="Decrypted values" value="Restricted" hidden/></div></>;
+  return <><div className="panel-label"><ShieldCheck size={15} /> AUTHORIZED AUDITOR VIEW</div><div className="auditor-lock verified"><div className="lock-visual"><KeyRound size={24}/></div><div><strong>Signed audit export verified</strong><span>Decrypted values remain in the local auditor vault.</span></div></div><div className="state-stack compact"><StateRow label="Auditor key version" value={String(testnetEvidence.audit.auditor.keyVersion)}/><StateRow label="Linked ciphertext events" value={String(testnetEvidence.audit.eventVerification.indexedEvents)} good/><StateRow label="Settlement channels" value="Agree" good/><StateRow label="Recipient disclosure" value="Verified" good/><StateRow label="Disclosure proof" value={`${testnetEvidence.disclosure.proof.bytes.toLocaleString()} B`}/><StateRow label="Export fingerprint" value={compact(testnetEvidence.audit.exportIntegrity.privateExportSha256, 8, 6)}/><StateRow label="Decrypted values" value="Restricted" hidden/></div></>;
 }
 
 function StateRow({ label, value, good, hidden }: { label: string; value: string; good?: boolean; hidden?: boolean }) {
@@ -388,6 +427,15 @@ function EvidencePage({ onEvidence, live }: { onEvidence: () => void; live: Live
     ["Unauthorized participation", testnetEvidence.setup.rejectedAccount, "Rejected"],
     ["Max-Bid statement match", testnetEvidence.settlement.maxBidProof.sha256, "448 bytes"],
     ["Atomic settlement", testnetEvidence.settlement.finalizeTransaction, "Settled"],
+    ["Auditor event linkage", testnetEvidence.settlement.finalizeTransaction, "Verified"],
+    ["Signed audit export", testnetEvidence.audit.auditor.registrationTransaction, "Signed"],
+    ["Recipient-bound disclosure", testnetEvidence.disclosure.event.transaction, "Verified"],
+    ["Atomic bid withdrawal", testnetEvidence.withdrawal.transactions.withdrawBid, "Reclaimed"],
+    ...testnetEvidence.reclaim.losingBidderReclaims.map((item, index) => [
+      `Losing-bid reclaim ${index + 1}`,
+      item.transaction,
+      "Reclaimed",
+    ]),
   ];
   return (
     <main className="page-shell">
@@ -408,7 +456,7 @@ function ProofFingerprint() {
 function ContractsPage() {
   return (
     <main className="page-shell">
-      <section className="page-title"><div><span className="role-banner">PINNED TESTNET STACK</span><h1>Contract registry</h1><p>Deployed from the revisions recorded in the evidence manifest.</p></div><div className="network-state large"><span className="network-dot"/>8 active contracts</div></section>
+      <section className="page-title"><div><span className="role-banner">PINNED TESTNET STACK</span><h1>Contract registry</h1><p>Deployed from the revisions recorded in the evidence manifest.</p></div><div className="network-state large"><span className="network-dot"/>{contracts.length} active contracts</div></section>
       <section className="contract-grid">{contracts.map(([name, item]) => <a className="contract-row" href={explorerContract(item.contractId)} target="_blank" rel="noreferrer" key={name}><div className="contract-icon"><Database size={18}/></div><div><strong>{name}</strong><span>{item.contractId}</span></div><ArrowUpRight size={17}/></a>)}</section>
       <section className="revision-band"><div><span>OpenZeppelin contracts</span><strong>{compact(testnetEvidence.deployment.revisions.stellarContracts, 12, 8)}</strong></div><div><span>UltraHonk backend</span><strong>{compact(testnetEvidence.deployment.revisions.ultraHonk, 12, 8)}</strong></div><div><span>Noir</span><strong>{testnetEvidence.deployment.revisions.noir}</strong></div><div><span>Barretenberg</span><strong>{testnetEvidence.deployment.revisions.barretenberg}</strong></div></section>
     </main>
@@ -436,6 +484,7 @@ export function App() {
   const [running, setRunning] = useState(false);
   const [drawer, setDrawer] = useState(false);
   const [live, setLive] = useState<LiveState>({ status: "checking" });
+  const [wallet, setWallet] = useState<WalletState>({ status: "disconnected" });
 
   const refreshLive = useCallback(() => {
     setLive({ status: "checking" });
@@ -469,11 +518,27 @@ export function App() {
 
   const runReplay = () => { setStage(0); setRunning(true); };
 
+  const connectWallet = useCallback(() => {
+    setWallet({ status: "connecting" });
+    void import("./wallet")
+      .then(async ({ connectFreighter, productClient }) => {
+        const session = await connectFreighter();
+        const round = await productClient().round(testnetEvidence.settlement.roundId);
+        const nativeStatus = round.status;
+        const roundStatus = Array.isArray(nativeStatus) ? String(nativeStatus[0]) : String(nativeStatus);
+        setWallet({ status: "connected", session, roundStatus });
+      })
+      .catch((error: unknown) => setWallet({
+        status: "error",
+        message: error instanceof Error ? error.message : "Could not connect Freighter",
+      }));
+  }, []);
+
   return (
     <div className="app-frame">
       <AppHeader page={page} setPage={setPage}/>
       <LiveVerificationBar state={live} refresh={refreshLive}/>
-      {page === "round" && <main className="page-shell"><RoundHeader onEvidence={() => setDrawer(true)}/><Metrics/><JudgeReplay stage={stage} running={running} onRun={runReplay} onStop={() => setRunning(false)}/><div className="main-grid"><ParticipantsTable/><RolePanel role={role} setRole={setRole}/></div></main>}
+      {page === "round" && <main className="page-shell"><RoundHeader onEvidence={() => setDrawer(true)}/><Metrics/><JudgeReplay stage={stage} running={running} onRun={runReplay} onStop={() => setRunning(false)}/><div className="main-grid"><ParticipantsTable/><RolePanel role={role} setRole={setRole} wallet={wallet} connectWallet={connectWallet} disconnectWallet={() => setWallet({ status: "disconnected" })}/></div></main>}
       {page === "evidence" && <EvidencePage onEvidence={() => setDrawer(true)} live={live}/>}
       {page === "contracts" && <ContractsPage/>}
       <EvidenceDrawer open={drawer} onClose={() => setDrawer(false)}/>

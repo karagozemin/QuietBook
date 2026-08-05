@@ -8,6 +8,7 @@ packages/*/dist/
 apps/web/dist/
 apps/web/playwright-report/
 apps/web/test-results/
+apps/indexer/dist/
 .env
 .env.*
 !.env.example
@@ -19,5 +20,10 @@ docs/evidence/testnet/*
 !docs/evidence/testnet/controller-smoke.json
 !docs/evidence/testnet/round-setup.json
 !docs/evidence/testnet/settlement.json
+!docs/evidence/testnet/reclaim.json
+!docs/evidence/testnet/withdrawal.json
+!docs/evidence/testnet/audit.json
+!docs/evidence/testnet/disclosure.json
+!docs/evidence/testnet/negative-tests.json
 .pdf
 QuietBook_PRD_v1.0.pdf

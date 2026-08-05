@@ -1,0 +1,34 @@
+{
+  "generatedAt": "2026-08-05T15:52:23.080Z",
+  "network": "testnet",
+  "roundId": "65b6573282e6f4973ffc3623c4509f7186ed777f2020e0ca59c3e7b6120abbc6",
+  "circuit": {
+    "id": "disclose_settlement",
+    "artifactSha256": "171b8e77bc2d338949190f2e4cd458fa66fa12c83d3b6c8a672fc0ec3b039438",
+    "verificationKeySha256": "9b492728e07054bd19c69b416e788453e7b6bba8d0d063916f7b0352afb0c3e6",
+    "verificationKeyBytes": 1760
+  },
+  "event": {
+    "contract": "CDJSIHTYZMUFLLMPWRC6QZKG5PWDKMB3A2RNH73PZUKMXPBDBG5IZ7KT",
+    "id": "0017107709438533632-0000000000",
+    "ledger": 3983199,
+    "transaction": "3a47b09ea1def84f1bef4bb71a00fab2080cfb5e5697a84d86c549a97f89246d"
+  },
+  "recipientBinding": {
+    "publicKeySha256": "2f378d57fca0455f9064bc6bc3c67ad9eef4be792be5ef912dcf272d1c949c89",
+    "nonceSha256": "8d8d0e07066a3313572a8a889154abc4324437ba55b0b03361601a321af2c91c"
+  },
+  "proof": {
+    "bytes": 14592,
+    "sha256": "3a3b362de7683c7e5cc3027c2e8e74ad28306c3cba206f1e85d3462fd5a6860e",
+    "verified": true
+  },
+  "verification": {
+    "chainInputsReconstructed": true,
+    "designatedRecipientDecrypted": true,
+    "wrongNonceRejected": true,
+    "wrongRecipientRejected": true,
+    "tamperedEventRejected": true
+  },
+  "privacyNote": "The disclosed amount, recipient secret, nonce, ciphertext and proof bundle remain only in the ignored private file."
+}

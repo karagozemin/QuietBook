@@ -2,8 +2,12 @@ import deployment from "../../../docs/evidence/testnet/deployment.json";
 import controller from "../../../docs/evidence/testnet/controller-smoke.json";
 import setup from "../../../docs/evidence/testnet/round-setup.json";
 import settlement from "../../../docs/evidence/testnet/settlement.json";
+import reclaim from "../../../docs/evidence/testnet/reclaim.json";
+import withdrawal from "../../../docs/evidence/testnet/withdrawal.json";
+import audit from "../../../docs/evidence/testnet/audit.json";
+import disclosure from "../../../docs/evidence/testnet/disclosure.json";
 
-export const testnetEvidence = { deployment, controller, setup, settlement };
+export const testnetEvidence = { deployment, controller, setup, settlement, reclaim, withdrawal, audit, disclosure };
 
 export const participants = setup.bidderAccounts.map((account, index) => ({
   alias: `Demo Investor ${String(index + 1).padStart(2, "0")}`,
@@ -11,6 +15,8 @@ export const participants = setup.bidderAccounts.map((account, index) => ({
   registrationIndex: index,
   winner: account === settlement.winner,
   registrationTransaction: setup.bidderTransactions[index]?.registerBid ?? "",
+  reclaimTransaction:
+    reclaim.losingBidderReclaims.find((item) => item.account === account)?.transaction ?? "",
 }));
 
 export const explorerTransaction = (hash: string) =>

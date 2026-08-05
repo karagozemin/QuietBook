@@ -133,6 +133,86 @@ export function buildSetSpenderWitness(p: SetSpenderParams): SetSpenderWitness {
   };
 }
 
+export interface RevokeSpenderParams {
+  ownerKeys: KeyPair;
+  spendableValue: bigint;
+  spendableRandomness: bigint;
+  allowance: bigint;
+  allowanceRandomness: bigint;
+  allowanceSalt: bigint;
+  spenderId: bigint;
+  ownerAuditorKey: Point;
+  sigma?: bigint;
+  rE?: bigint;
+}
+
+export interface RevokeSpenderWitness {
+  inputs: NoirInputs;
+  payload: {
+    cSpendNew: Point;
+    bTilde: bigint;
+    rE: Point;
+    sigma: bigint;
+    vAudS: bigint;
+    bAudS: bigint;
+  };
+  nextSpendable: { value: bigint; randomness: bigint; commitment: Point };
+}
+
+export function buildRevokeSpenderWitness(p: RevokeSpenderParams): RevokeSpenderWitness {
+  assertAmount(p.spendableValue, "spendable value");
+  assertAmount(p.allowance, "allowance");
+  const nextValue = p.spendableValue + p.allowance;
+  assertAmount(nextValue, "post-reclaim spendable value");
+
+  const delegationDvk = dvkFromVkOp(p.ownerKeys.vk, p.spenderId);
+  const expectedAllowanceRandomness = deriveAllowR(delegationDvk, p.allowanceSalt);
+  if (expectedAllowanceRandomness !== p.allowanceRandomness) {
+    throw new Error("allowance opening does not match owner key, spender and salt");
+  }
+
+  const sigma = p.sigma ?? randomScalar();
+  const rE = p.rE ?? randomScalar();
+  const cSpend = commit(p.spendableValue, p.spendableRandomness);
+  const cA = commit(p.allowance, p.allowanceRandomness);
+  const nextRandomness = deriveSpendR(p.ownerKeys.vk, sigma);
+  const cSpendNew = commit(nextValue, nextRandomness);
+  const bTilde = encryptBalance(nextValue, p.ownerKeys.vk, sigma);
+  const rEPoint = scalarMul(rE, H);
+  const auditorShared = currentEcdh(rE, p.ownerAuditorKey);
+  const auditorMasks = spongeSqueeze2(DOMAIN.AUDITOR_SENDER, auditorShared, sigma);
+  const vAudS = frAdd(p.allowance, auditorMasks[0]);
+  const bAudS = frAdd(nextValue, auditorMasks[1]);
+
+  const inputs: NoirInputs = {
+    sk: fieldIn(p.ownerKeys.sk),
+    v_a: fieldIn(p.allowance),
+    r_a: fieldIn(p.allowanceRandomness),
+    v_s: fieldIn(p.spendableValue),
+    r_s: fieldIn(p.spendableRandomness),
+    r_e: fieldIn(rE),
+    ...pointIn("c_spend", cSpend),
+    ...pointIn("c_a", cA),
+    sigma_a: fieldIn(p.allowanceSalt),
+    ...pointIn("y", p.ownerKeys.Y),
+    op_i: fieldIn(p.spenderId),
+    addr_f: fieldIn(p.ownerKeys.addrF),
+    ...pointIn("k_aud_s", p.ownerAuditorKey),
+    ...pointIn("c_spend_new", cSpendNew),
+    b_tilde: fieldIn(bTilde),
+    sigma: fieldIn(sigma),
+    ...pointIn("r_e", rEPoint),
+    v_tilde_aud_s: fieldIn(vAudS),
+    b_tilde_aud_s: fieldIn(bAudS),
+  };
+
+  return {
+    inputs,
+    payload: { cSpendNew, bTilde, rE: rEPoint, sigma, vAudS, bAudS },
+    nextSpendable: { value: nextValue, randomness: nextRandomness, commitment: cSpendNew },
+  };
+}
+
 export interface SpenderTransferParams {
   spenderKeys: KeyPair;
   delegationDvk: bigint;

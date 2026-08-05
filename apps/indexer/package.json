@@ -1,0 +1,23 @@
+{
+  "name": "@quietbook/indexer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/server.ts",
+    "sync": "tsx src/sync-cli.ts",
+    "test": "tsx --test test/indexer.test.ts"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^14.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

@@ -58,6 +58,11 @@ impl MockConfidentialToken {
     pub fn revoke_delegation(e: Env, owner: Address, spender: Address) {
         e.storage().persistent().remove(&(owner, spender));
     }
+
+    pub fn revoke_spender(e: Env, owner: Address, spender: Address, _data: soroban_sdk::Bytes) {
+        owner.require_auth();
+        e.storage().persistent().remove(&(owner, spender));
+    }
 }
 
 #[contract]
@@ -262,6 +267,74 @@ fn close_freezes_ordered_participant_hash() {
     let round = h.market.get_round(&id);
     assert_eq!(round.status, RoundStatus::Closed);
     assert_eq!(round.participant_set_hash, Some(hash));
+}
+
+#[test]
+fn bidder_withdrawal_revokes_delegation_and_removes_active_registration() {
+    let h = setup();
+    let id = funded_open_round(&h);
+    h.policy.set(&h.investor, &true);
+    h.confidential
+        .set_delegation(&h.investor, &h.controller.address, &300);
+    h.market.register_bid(&id, &h.investor);
+
+    h.market
+        .withdraw_bid(&id, &h.investor, &soroban_sdk::Bytes::new(&h.e));
+
+    assert!(!h
+        .confidential
+        .is_spender(&h.investor, &h.controller.address));
+    assert!(!h.market.get_bid(&id, &h.investor).unwrap().active);
+    assert_eq!(h.market.get_round(&id).bidder_count, 0);
+    assert!(h
+        .market
+        .try_withdraw_bid(&id, &h.investor, &soroban_sdk::Bytes::new(&h.e))
+        .is_err());
+}
+
+#[test]
+fn close_excludes_a_bidder_that_revoked_outside_the_market() {
+    let h = setup();
+    let id = funded_open_round(&h);
+    h.policy.set(&h.investor, &true);
+    h.confidential
+        .set_delegation(&h.investor, &h.controller.address, &300);
+    h.market.register_bid(&id, &h.investor);
+    h.confidential
+        .revoke_delegation(&h.investor, &h.controller.address);
+
+    h.e.ledger().set_sequence_number(201);
+    h.market.close_round(&id);
+
+    assert_eq!(h.market.get_round(&id).bidder_count, 0);
+    assert_eq!(h.market.get_bidders(&id).len(), 0);
+    assert!(!h.market.get_bid(&id, &h.investor).unwrap().active);
+}
+
+#[test]
+fn bid_registration_and_withdrawal_fail_after_deadline() {
+    let h = setup();
+    let id = funded_open_round(&h);
+    h.policy.set(&h.investor, &true);
+    h.confidential
+        .set_delegation(&h.investor, &h.controller.address, &300);
+    h.market.register_bid(&id, &h.investor);
+    h.e.ledger().set_sequence_number(201);
+
+    assert!(h
+        .market
+        .try_withdraw_bid(&id, &h.investor, &soroban_sdk::Bytes::new(&h.e))
+        .is_err());
+    assert!(h
+        .confidential
+        .is_spender(&h.investor, &h.controller.address));
+
+    let late_bidder = Address::generate(&h.e);
+    h.policy.set(&late_bidder, &true);
+    h.confidential
+        .set_delegation(&late_bidder, &h.controller.address, &300);
+    assert!(h.market.try_register_bid(&id, &late_bidder).is_err());
+    assert!(h.market.get_bid(&id, &late_bidder).is_none());
 }
 
 #[test]

@@ -7,6 +7,22 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./product": {
+      "types": "./dist/product.d.ts",
+      "import": "./dist/product.js"
+    },
+    "./account": {
+      "types": "./dist/account.d.ts",
+      "import": "./dist/account.js"
+    },
+    "./audit": {
+      "types": "./dist/audit.d.ts",
+      "import": "./dist/audit.js"
+    },
+    "./disclosure": {
+      "types": "./dist/disclosure.d.ts",
+      "import": "./dist/disclosure.js"
     }
   },
   "scripts": {
@@ -14,7 +30,7 @@
     "build:confidential-keys": "tsx scripts/build-confidential-keys.ts",
     "build:max-bid-key": "tsx scripts/build-max-bid.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx test/spender.test.ts",
+    "test": "tsx test/spender.test.ts && tsx test/product.test.ts && tsx test/audit.test.ts",
     "test:proof": "tsx test/proof.test.ts"
   },
   "dependencies": {

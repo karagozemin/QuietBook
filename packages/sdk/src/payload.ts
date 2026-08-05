@@ -1,8 +1,33 @@
-import { xdr } from "@stellar/stellar-sdk";
-import { pointToBytes, toBytes32BE, type Point } from "@ctd/sdk";
-import type { SetSpenderWitness, SpenderTransferWitness } from "./spender.js";
+import { nativeToScVal, xdr } from "@stellar/stellar-sdk";
+import type { Point } from "@ctd/sdk";
+import type {
+  RevokeSpenderWitness,
+  SetSpenderWitness,
+  SpenderTransferWitness,
+} from "./spender.js";
 
-const bytes = (value: Uint8Array): xdr.ScVal => xdr.ScVal.scvBytes(Buffer.from(value));
+const bytes = (value: Uint8Array): xdr.ScVal => nativeToScVal(value, { type: "bytes" });
+
+function toBytes32BE(value: bigint): Uint8Array {
+  if (value < 0n || value >= 1n << 256n) throw new RangeError("value outside 256-bit range");
+  const encoded = new Uint8Array(32);
+  let remaining = value;
+  for (let index = 31; index >= 0; index -= 1) {
+    encoded[index] = Number(remaining & 0xffn);
+    remaining >>= 8n;
+  }
+  return encoded;
+}
+
+function pointToBytes(value: Point): Uint8Array {
+  const encoded = new Uint8Array(64);
+  if (value.is0()) return encoded;
+  const { x, y } = value.toAffine();
+  encoded.set(toBytes32BE(x), 0);
+  encoded.set(toBytes32BE(y), 32);
+  return encoded;
+}
+
 const point = (value: Point): xdr.ScVal => bytes(pointToBytes(value));
 const field = (value: bigint): xdr.ScVal => bytes(toBytes32BE(value));
 
@@ -66,3 +91,20 @@ export function encodeSpenderTransferData(
   );
 }
 
+export function encodeRevokeSpenderData(
+  witness: RevokeSpenderWitness,
+  proof: Uint8Array,
+): xdr.ScVal {
+  const p = witness.payload;
+  return envelope(
+    struct({
+      b_tilde: field(p.bTilde),
+      b_tilde_aud_s: field(p.bAudS),
+      c_spend_new: point(p.cSpendNew),
+      r_e_point: point(p.rE),
+      sigma: field(p.sigma),
+      v_tilde_aud_s: field(p.vAudS),
+    }),
+    proof,
+  );
+}

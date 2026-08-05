@@ -92,6 +92,8 @@ pub enum MarketError {
     MaxProofInvalid = 4018,
     SettlementDeadlinePassed = 4019,
     RoundAlreadySettled = 4020,
+    BidNotRegistered = 4021,
+    BidNotActive = 4022,
 }
 
 const MAX_BIDDERS: u32 = 3;
@@ -131,6 +133,16 @@ pub struct BidRegistered {
     pub bidder: Address,
     pub registration_index: u32,
     pub registered_ledger: u32,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BidWithdrawn {
+    #[topic]
+    pub round_id: BytesN<32>,
+    #[topic]
+    pub bidder: Address,
+    pub withdrawn_ledger: u32,
 }
 
 #[contractevent]
@@ -328,7 +340,8 @@ impl QuietBookMarket {
         {
             panic_with(&e, MarketError::BidAlreadyRegistered);
         }
-        if round.bidder_count >= MAX_BIDDERS {
+        let mut bidders = load_bidders(&e, &round_id);
+        if bidders.len() >= MAX_BIDDERS {
             panic_with(&e, MarketError::BidCapacityReached);
         }
         if !EligibilityPolicyClient::new(&e, &round.config.eligibility_policy)
@@ -349,11 +362,10 @@ impl QuietBookMarket {
         let registration = BidRegistration {
             round_id: round_id.clone(),
             bidder: bidder.clone(),
-            registration_index: round.bidder_count,
+            registration_index: bidders.len(),
             registered_ledger: e.ledger().sequence(),
             active: true,
         };
-        let mut bidders = load_bidders(&e, &round_id);
         bidders.push_back(bidder.clone());
         round.bidder_count += 1;
         e.storage()
@@ -372,6 +384,40 @@ impl QuietBookMarket {
         save_round(&e, &round);
     }
 
+    pub fn withdraw_bid(e: Env, round_id: BytesN<32>, bidder: Address, revoke_data: Bytes) {
+        bidder.require_auth();
+        let mut round = load_round(&e, &round_id);
+        require_status(&e, &round, RoundStatus::Open, MarketError::RoundNotOpen);
+        if e.ledger().sequence() > round.config.bid_deadline_ledger {
+            panic_with(&e, MarketError::BidDeadlinePassed);
+        }
+
+        let key = DataKey::Bid(round_id.clone(), bidder.clone());
+        let mut registration: BidRegistration = e
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| panic_with(&e, MarketError::BidNotRegistered));
+        if !registration.active {
+            panic_with(&e, MarketError::BidNotActive);
+        }
+
+        let token = ConfidentialTokenClient::new(&e, &round.config.confidential_token);
+        if token.is_spender(&bidder, &round.config.controller) {
+            token.revoke_spender(&bidder, &round.config.controller, &revoke_data);
+        }
+        registration.active = false;
+        round.bidder_count -= 1;
+        e.storage().persistent().set(&key, &registration);
+        BidWithdrawn {
+            round_id,
+            bidder,
+            withdrawn_ledger: e.ledger().sequence(),
+        }
+        .publish(&e);
+        save_round(&e, &round);
+    }
+
     pub fn close_round(e: Env, round_id: BytesN<32>) -> BytesN<32> {
         let mut round = load_round(&e, &round_id);
         require_status(&e, &round, RoundStatus::Open, MarketError::RoundNotOpen);
@@ -379,10 +425,47 @@ impl QuietBookMarket {
             panic_with(&e, MarketError::BidDeadlineNotReached);
         }
         let bidders = load_bidders(&e, &round_id);
+        let token = ConfidentialTokenClient::new(&e, &round.config.confidential_token);
+        let mut active_bidders = Vec::<Address>::new(&e);
+        for bidder in bidders.iter() {
+            let key = DataKey::Bid(round_id.clone(), bidder.clone());
+            let mut registration: BidRegistration = e
+                .storage()
+                .persistent()
+                .get(&key)
+                .unwrap_or_else(|| panic_with(&e, MarketError::BidNotRegistered));
+            if !registration.active {
+                continue;
+            }
+            let live = if token.is_spender(&bidder, &round.config.controller) {
+                token
+                    .get_spender_delegation(&bidder, &round.config.controller)
+                    .live_until_ledger
+                    >= round.config.settlement_deadline_ledger
+            } else {
+                false
+            };
+            if live {
+                active_bidders.push_back(bidder);
+            } else {
+                registration.active = false;
+                e.storage().persistent().set(&key, &registration);
+                BidWithdrawn {
+                    round_id: round_id.clone(),
+                    bidder,
+                    withdrawn_ledger: e.ledger().sequence(),
+                }
+                .publish(&e);
+            }
+        }
+        round.bidder_count = active_bidders.len();
+        e.storage()
+            .persistent()
+            .set(&DataKey::Bidders(round_id.clone()), &active_bidders);
         let hash = BytesN::from_array(
             &e,
             &e.crypto()
-                .sha256(&(round_id.clone(), bidders).to_xdr(&e))
+                .sha256(&(round_id.clone(), active_bidders).to_xdr(&e))
                 .to_array(),
         );
         round.status = RoundStatus::Closed;

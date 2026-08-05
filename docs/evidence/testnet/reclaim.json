@@ -1,0 +1,20 @@
+{
+  "generatedAt": "2026-08-05T15:13:55.587Z",
+  "roundId": "65b6573282e6f4973ffc3623c4509f7186ed777f2020e0ca59c3e7b6120abbc6",
+  "controller": "CAWJBVFGNPQQWQ2PJAQ77BQMGUUE24NMIIKTAJ6ADEKODHS2WIIXRSMB",
+  "losingBidderReclaims": [
+    {
+      "account": "GCT7CLVOOIPU5GW6JTISXLJ5V6G2737OD4RUVMFI6PVHJCSIKNSCUNSJ",
+      "transaction": "beead8383b398bd4350fd2e85ffeb878afce858ac8a4a68fcb4099804b7b864d",
+      "proofSha256": "d7c0df0e797d74158f3421cd6703582edc8b6ca23548aeb956fd724bee8869b8",
+      "delegationRemoved": true
+    },
+    {
+      "account": "GBY3FYL6ASUGW6GJISPPH272BQMNPK76WLJVZ5OBPOIWTXQGWJ5LDRGV",
+      "transaction": "a440a5e7298f6645766309a5628e598891287d7edaf4af0930b09d13a42e13c8",
+      "proofSha256": "6f3afff7ae894bf18435a9f7babbd24e53289a3282701159679a92a56e922a44",
+      "delegationRemoved": true
+    }
+  ],
+  "privacyNote": "No bid value, balance opening, confidential key, or witness is included."
+}
