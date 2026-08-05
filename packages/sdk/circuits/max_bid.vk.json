@@ -1,0 +1,8 @@
+{
+  "circuit": "circuit_max_bid",
+  "transcript": "keccak",
+  "bytes": 1760,
+  "sha256": "69e98849f32f2f5c3f2d85ae4d0c9e10d7cc0031b0fe37032b1c36a637707502",
+  "fixture_proof_sha256": "4f9b857de08a746633044b2ad80eb7507068bd24c1bc27b8f5f73eb97f39b434",
+  "public_inputs": 14
+}

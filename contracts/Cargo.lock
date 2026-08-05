@@ -1151,6 +1151,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "quietbook-max-bid-verifier"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+ "ultrahonk_soroban_verifier",
+]
+
+[[package]]
 name = "quietbook-round-controller"
 version = "0.1.0"
 dependencies = [

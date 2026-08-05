@@ -6,7 +6,7 @@ QuietBook is a Testnet-only, unaudited prototype for confidential primary RWA is
 
 ## Status
 
-The repository is being built in the dependency order defined by the PRD. The current slice establishes:
+The repository is being built in the dependency order defined by the PRD. The local P0 integration gate now establishes:
 
 - the authoritative round state machine;
 - public RWA escrow before a round can open;
@@ -14,9 +14,13 @@ The repository is being built in the dependency order defined by the PRD. The cu
 - live, round-scoped confidential delegation checks without storing bid values;
 - a unique controller contract that can register and spend as its own confidential-token identity;
 - QuietBook witness builders and current XDR payloads for `set_spender` and `spender_transfer`;
-- locally generated and verified Keccak-transcript UltraHonk proofs for both spender operations.
+- a fixed-capacity `N=3` Max-Bid circuit with reserve enforcement and deterministic tie-breaking;
+- locally generated and verified Keccak-transcript UltraHonk proofs for both spender operations and Max-Bid;
+- a dedicated Max-Bid verifier with an immutable verification key;
+- trusted on-chain public-input construction and atomic confidential-payment/public-RWA finalization;
+- rollback protection for invalid proofs, revoked delegations, invalid winners, and duplicate settlement.
 
-The Max-Bid circuit, dedicated verifier integration, atomic finalization, web app, and Testnet evidence are subsequent slices. No production or mainnet use is supported.
+The next core milestone is a complete Testnet evidence run. The web app follows that evidence gate. No production or mainnet use is supported.
 
 ## Development
 
@@ -45,6 +49,7 @@ Run the contract tests:
 
 ```sh
 cargo test --manifest-path contracts/Cargo.toml
+cargo clippy --manifest-path contracts/Cargo.toml --all-targets -- -D warnings
 ```
 
 Build the contracts for Wasm:

@@ -64,5 +64,12 @@ cp "$OZ_DIR/packages/tokens/src/confidential/circuits/target/circuit_spender_tra
 cp "$OZ_DIR/packages/tokens/src/confidential/circuits/target/circuit_revoke_spender.json" \
   "$ROOT_DIR/packages/sdk/circuits/revoke_spender.json"
 
-echo "Pinned upstream sources and spender circuit artifacts are ready."
+(
+  cd "$ROOT_DIR/circuits/max_bid"
+  "$NARGO_BIN" test
+  "$NARGO_BIN" compile
+)
+cp "$ROOT_DIR/circuits/max_bid/target/circuit_max_bid.json" \
+  "$ROOT_DIR/packages/sdk/circuits/max_bid.json"
 
+echo "Pinned upstream sources and spender circuit artifacts are ready."

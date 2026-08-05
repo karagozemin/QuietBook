@@ -11,6 +11,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:max-bid-key": "tsx scripts/build-max-bid.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx test/spender.test.ts",
     "test:proof": "tsx test/proof.test.ts"

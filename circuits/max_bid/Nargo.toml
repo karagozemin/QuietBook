@@ -1,0 +1,9 @@
+[package]
+name = "circuit_max_bid"
+type = "bin"
+authors = ["QuietBook Team"]
+compiler_version = "=1.0.0"
+
+[dependencies]
+stellar_confidential_lib = { path = "../../.upstream/stellar-contracts/packages/tokens/src/confidential/circuits/lib" }
+

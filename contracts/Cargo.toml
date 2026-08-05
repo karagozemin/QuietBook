@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["market", "round-controller"]
+members = ["market", "max-bid-verifier", "round-controller"]
 
 [workspace.package]
 edition = "2021"
@@ -11,6 +11,8 @@ publish = false
 [workspace.dependencies]
 soroban-sdk = { version = "27.0.2" }
 stellar-tokens = { git = "https://github.com/OpenZeppelin/stellar-contracts", rev = "98090b3e59785454f55b3617992c2f84250c7173" }
+ultrahonk-soroban-verifier = { git = "https://github.com/brozorec/rs-soroban-ultrahonk", rev = "5e9b4d995ec43ed1953cf89cfd738df6471e4b93", package = "ultrahonk_soroban_verifier", default-features = false }
+
 
 [profile.release]
 opt-level = "z"
@@ -21,4 +23,3 @@ debug-assertions = false
 panic = "abort"
 codegen-units = 1
 lto = true
-

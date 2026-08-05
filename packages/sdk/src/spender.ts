@@ -161,6 +161,7 @@ export interface SpenderTransferWitness {
     vAudS: bigint;
     aAudS: bigint;
   };
+  paymentOpening: { value: bigint; randomness: bigint; commitment: Point };
   nextDelegation: { value: bigint; randomness: bigint; sigmaA: bigint; cA: Point };
 }
 
@@ -231,6 +232,7 @@ export function buildSpenderTransferWitness(p: SpenderTransferParams): SpenderTr
   return {
     inputs,
     payload: { cANew, cTransfer, rE: rEPoint, vTilde, aTildeNew, sigmaANew, vAudR, rAudR, vAudS, aAudS },
+    paymentOpening: { value: p.amount, randomness: transferRandomness, commitment: cTransfer },
     nextDelegation: { value: nextValue, randomness: nextRandomness, sigmaA: sigmaANew, cA: cANew },
   };
 }

@@ -9,6 +9,7 @@
   "scripts": {
     "bootstrap": "bash scripts/bootstrap-upstream.sh",
     "build:sdk": "pnpm --filter @ctd/sdk build && pnpm --filter @quietbook/sdk build",
+    "build:max-bid-key": "pnpm --filter @quietbook/sdk build:max-bid-key",
     "test": "pnpm test:contracts && pnpm build:sdk && pnpm test:sdk",
     "test:contracts": "cargo test --manifest-path contracts/Cargo.toml",
     "test:sdk": "pnpm --filter @quietbook/sdk test",

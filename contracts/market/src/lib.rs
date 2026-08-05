@@ -2,9 +2,11 @@
 
 use soroban_sdk::{
     contract, contractclient, contracterror, contractevent, contractimpl, contracttype, xdr::ToXdr,
-    Address, BytesN, Env, Vec,
+    Address, Bytes, BytesN, Env, Vec,
 };
-use stellar_tokens::confidential::ConfidentialTokenClient;
+use stellar_tokens::confidential::{
+    storage as confidential_storage, ConfidentialTokenClient, SpenderTransferData,
+};
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -85,6 +87,11 @@ pub enum MarketError {
     InvalidFailureTransition = 4013,
     BidCapacityReached = 4014,
     NoSaleNotAvailable = 4015,
+    ControllerConfigurationMismatch = 4016,
+    WinnerIndexInvalid = 4017,
+    MaxProofInvalid = 4018,
+    SettlementDeadlinePassed = 4019,
+    RoundAlreadySettled = 4020,
 }
 
 const MAX_BIDDERS: u32 = 3;
@@ -153,9 +160,41 @@ pub struct RwaReclaimed {
     pub amount: i128,
 }
 
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WinnerProven {
+    #[topic]
+    pub round_id: BytesN<32>,
+    #[topic]
+    pub winner: Address,
+    pub proof_hash: BytesN<32>,
+    pub participant_set_hash: BytesN<32>,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RoundSettled {
+    #[topic]
+    pub round_id: BytesN<32>,
+    #[topic]
+    pub winner: Address,
+    pub proof_hash: BytesN<32>,
+}
+
 #[contractclient(name = "EligibilityPolicyClient")]
 pub trait EligibilityPolicy {
     fn is_authorized(e: Env, account: Address, token: Address) -> bool;
+}
+
+#[contractclient(name = "RoundControllerClient")]
+pub trait RoundControllerInterface {
+    fn configuration(e: Env) -> (Address, Address, Address, u32, bool);
+    fn settle(e: Env, from: Address, spender_transfer_data: Bytes);
+}
+
+#[contractclient(name = "MaxBidVerifierClient")]
+pub trait MaxBidVerifierInterface {
+    fn verify(e: Env, public_inputs: Bytes, proof: Bytes) -> bool;
 }
 
 #[contract]
@@ -243,6 +282,16 @@ impl QuietBookMarket {
                 < round.config.rwa_lot
         {
             panic_with(&e, MarketError::RwaEscrowInsufficient);
+        }
+        let controller = RoundControllerClient::new(&e, &round.config.controller);
+        let (market, token, issuer, deadline, registered) = controller.configuration();
+        if market != e.current_contract_address()
+            || token != round.config.confidential_token
+            || issuer != round.config.issuer
+            || deadline != round.config.settlement_deadline_ledger
+            || !registered
+        {
+            panic_with(&e, MarketError::ControllerConfigurationMismatch);
         }
         round.status = RoundStatus::Open;
         RoundOpened {
@@ -390,6 +439,77 @@ impl QuietBookMarket {
         save_round(&e, &round);
     }
 
+    pub fn max_bid_public_inputs(
+        e: Env,
+        round_id: BytesN<32>,
+        winner_index: u32,
+        spender_transfer_data: Bytes,
+    ) -> Bytes {
+        let round = load_round(&e, &round_id);
+        require_status(&e, &round, RoundStatus::Closed, MarketError::RoundNotClosed);
+        build_max_bid_public_inputs(&e, &round, winner_index, &spender_transfer_data)
+    }
+
+    pub fn finalize(
+        e: Env,
+        round_id: BytesN<32>,
+        winner_index: u32,
+        max_bid_proof: Bytes,
+        spender_transfer_data: Bytes,
+    ) {
+        let mut round = load_round(&e, &round_id);
+        if round.status == RoundStatus::Settled {
+            panic_with(&e, MarketError::RoundAlreadySettled);
+        }
+        require_status(&e, &round, RoundStatus::Closed, MarketError::RoundNotClosed);
+        if e.ledger().sequence() > round.config.settlement_deadline_ledger {
+            panic_with(&e, MarketError::SettlementDeadlinePassed);
+        }
+
+        let bidders = load_bidders(&e, &round_id);
+        let winner = bidders
+            .get(winner_index)
+            .unwrap_or_else(|| panic_with(&e, MarketError::WinnerIndexInvalid));
+        let public_inputs =
+            build_max_bid_public_inputs(&e, &round, winner_index, &spender_transfer_data);
+        if !MaxBidVerifierClient::new(&e, &round.config.max_bid_verifier)
+            .verify(&public_inputs, &max_bid_proof)
+        {
+            panic_with(&e, MarketError::MaxProofInvalid);
+        }
+
+        let proof_hash = BytesN::from_array(&e, &e.crypto().sha256(&max_bid_proof).to_array());
+        RoundControllerClient::new(&e, &round.config.controller)
+            .settle(&winner, &spender_transfer_data);
+        soroban_sdk::token::TokenClient::new(&e, &round.config.rwa_token).transfer(
+            &e.current_contract_address(),
+            &winner,
+            &round.config.rwa_lot,
+        );
+
+        round.status = RoundStatus::Settled;
+        round.winner = Some(winner.clone());
+        round.proof_hash = Some(proof_hash.clone());
+        let participant_set_hash = round
+            .participant_set_hash
+            .clone()
+            .unwrap_or_else(|| panic_with(&e, MarketError::RoundNotClosed));
+        WinnerProven {
+            round_id: round_id.clone(),
+            winner: winner.clone(),
+            proof_hash: proof_hash.clone(),
+            participant_set_hash,
+        }
+        .publish(&e);
+        RoundSettled {
+            round_id,
+            winner,
+            proof_hash,
+        }
+        .publish(&e);
+        save_round(&e, &round);
+    }
+
     pub fn get_round(e: Env, round_id: BytesN<32>) -> Round {
         load_round(&e, &round_id)
     }
@@ -435,6 +555,72 @@ fn load_bidders(e: &Env, id: &BytesN<32>) -> Vec<Address> {
         .persistent()
         .get(&DataKey::Bidders(id.clone()))
         .unwrap_or(Vec::new(e))
+}
+
+fn build_max_bid_public_inputs(
+    e: &Env,
+    round: &Round,
+    winner_index: u32,
+    spender_transfer_data: &Bytes,
+) -> Bytes {
+    if winner_index >= round.bidder_count {
+        panic_with(e, MarketError::WinnerIndexInvalid);
+    }
+    let participant_set_hash = round
+        .participant_set_hash
+        .clone()
+        .unwrap_or_else(|| panic_with(e, MarketError::RoundNotClosed));
+    let domain_hash = e.crypto().sha256(
+        &(
+            e.current_contract_address(),
+            round.id.clone(),
+            round.config.clone(),
+            participant_set_hash,
+        )
+            .to_xdr(e),
+    );
+    let mut domain = domain_hash.to_array();
+    domain[0] = 0;
+
+    let bidders = load_bidders(e, &round.id);
+    let token = ConfidentialTokenClient::new(e, &round.config.confidential_token);
+    let mut public_inputs = Bytes::new(e);
+    public_inputs.extend_from_array(&domain);
+    for index in 0..MAX_BIDDERS {
+        if index < round.bidder_count {
+            let bidder = bidders
+                .get(index)
+                .unwrap_or_else(|| panic_with(e, MarketError::WinnerIndexInvalid));
+            if !token.is_spender(&bidder, &round.config.controller) {
+                panic_with(e, MarketError::DelegationNotFound);
+            }
+            let delegation = token.get_spender_delegation(&bidder, &round.config.controller);
+            public_inputs.append(&Bytes::from(delegation.allowance_commitment));
+        } else {
+            public_inputs.extend_from_array(&[0u8; 64]);
+        }
+    }
+    for index in 0..MAX_BIDDERS {
+        append_u32_field(&mut public_inputs, e, u32::from(index < round.bidder_count));
+    }
+    append_amount_field(&mut public_inputs, e, round.config.reserve_public);
+    append_u32_field(&mut public_inputs, e, winner_index);
+
+    let transfer: SpenderTransferData = confidential_storage::decode_data(e, spender_transfer_data);
+    public_inputs.append(&Bytes::from(transfer.payload.c_transfer));
+    public_inputs
+}
+
+fn append_u32_field(bytes: &mut Bytes, e: &Env, value: u32) {
+    let mut encoded = [0u8; 32];
+    encoded[28..].copy_from_slice(&value.to_be_bytes());
+    bytes.append(&Bytes::from_array(e, &encoded));
+}
+
+fn append_amount_field(bytes: &mut Bytes, e: &Env, value: i128) {
+    let mut encoded = [0u8; 32];
+    encoded[16..].copy_from_slice(&value.to_be_bytes());
+    bytes.append(&Bytes::from_array(e, &encoded));
 }
 
 fn require_status(e: &Env, round: &Round, expected: RoundStatus, error: MarketError) {

@@ -1,5 +1,9 @@
 import { H, deriveKeys, scalarMul } from "@ctd/sdk";
-import { buildSetSpenderWitness, buildSpenderTransferWitness } from "../src/index.js";
+import {
+  buildMaxBidWitness,
+  buildSetSpenderWitness,
+  buildSpenderTransferWitness,
+} from "../src/index.js";
 
 export function buildFixture() {
   const addrF = 0x12345n;
@@ -36,6 +40,20 @@ export function buildFixture() {
     rE: 0x555n,
   });
 
-  return { setSpender, spenderTransfer };
-}
+  const maxBid = buildMaxBidWitness({
+    roundDomain: 0x5155494554424f4f4bn,
+    bids: [
+      {
+        value: setSpender.delegation.value,
+        randomness: setSpender.delegation.randomness,
+        commitment: setSpender.delegation.cA,
+      },
+      { value: 9_820n, randomness: 0x888n },
+      { value: 9_950n, randomness: 0x999n },
+    ],
+    reserve: 9_500n,
+    payment: spenderTransfer.paymentOpening,
+  });
 
+  return { setSpender, spenderTransfer, maxBid };
+}
