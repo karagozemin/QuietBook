@@ -1,0 +1,4 @@
+packages:
+  - "packages/*"
+  - ".upstream/stellar-confidential-token-demo/packages/sdk"
+

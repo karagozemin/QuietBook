@@ -21,8 +21,10 @@ All three are pre-release and unaudited. QuietBook remains Testnet-only.
 5. The OpenZeppelin verifier already demonstrates cross-contract UltraHonk verification. QuietBook still needs a dedicated verifier because the upstream `CircuitType` enum has no Max-Bid variant.
 6. The reference demo SDK packages register, transfer, and withdraw artifacts, but it does not currently implement or package the spender witness flows. QuietBook must add `set_spender`, `spender_transfer`, and `revoke_spender` adapters before the real-proof integration gate can pass.
 7. Noir `1.0.0-beta.9` and Barretenberg `0.87.0` are the upstream artifact toolchain. They are not assumed to be globally installed; reproducible project-local scripts will pin them.
+8. The reference demo revision predates a protocol hardening change: its ECDH helper returns only the shared point's x-coordinate, while the pinned OpenZeppelin revision derives `Poseidon2(13, S.x, S.y)`. QuietBook uses the current two-coordinate derivation and has a proof test that detects future drift.
 
 ## Current gate result
 
-The contract API and authorization model are viable. Local contract tests prove controller identity, live delegation reads, and controller-driven spender transfer using the upstream contract with a mock verifier. Real witness/proof generation and the dedicated Max-Bid verifier remain open gate items and must be completed before UI work.
+The contract API and authorization model are viable. Local contract tests prove controller identity, live delegation reads, and controller-driven spender transfer against the upstream contract. QuietBook now builds current `set_spender` and `spender_transfer` witnesses, encodes their Soroban payloads, and generates and locally verifies 14,592-byte Keccak-transcript UltraHonk proofs for both pinned circuits.
 
+The remaining integration-gate item is a dedicated Max-Bid verifier called cross-contract from the market. It must be completed before UI work.

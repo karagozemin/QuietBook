@@ -1,0 +1,17 @@
+{
+  "name": "quietbook",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "bootstrap": "bash scripts/bootstrap-upstream.sh",
+    "build:sdk": "pnpm --filter @ctd/sdk build && pnpm --filter @quietbook/sdk build",
+    "test": "pnpm test:contracts && pnpm build:sdk && pnpm test:sdk",
+    "test:contracts": "cargo test --manifest-path contracts/Cargo.toml",
+    "test:sdk": "pnpm --filter @quietbook/sdk test",
+    "test:proof": "pnpm --filter @quietbook/sdk test:proof"
+  }
+}

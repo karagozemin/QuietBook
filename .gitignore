@@ -2,6 +2,9 @@
 target/
 **/test_snapshots/
 node_modules/
+.tools/
+.upstream/
+packages/*/dist/
 .env
 .env.*
 !.env.example
