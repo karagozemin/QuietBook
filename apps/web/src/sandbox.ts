@@ -408,7 +408,80 @@ async function recoverReceivingOpening(
     : null;
 }
 
+/**
+ * Reconstruct this account's spendable opening from retained Testnet events.
+ *
+ * A second browser rebuilds its local state with a zeroed spendable opening
+ * (see {@link recoverLocalState}). If the account previously merged incoming
+ * funds or delegated a spender, the on-chain spendable commitment carries a
+ * non-zero randomness that {@link reconcilePublicDeposits} cannot reproduce,
+ * so we replay the account's public event history instead.
+ *
+ * The reconstruction mirrors {@link recoverReceivingOpening}: deposits and
+ * incoming transfers accumulate into a pending receiving opening, and every
+ * `merge` for the account folds that pending opening into the spendable one.
+ * The result is only returned when it actually opens the supplied commitment,
+ * so a partial or divergent history can never yield an incorrect opening — it
+ * degrades safely to `null`.
+ */
+async function recoverSpendableOpening(
+  account: string,
+  holderKeys: ReturnType<typeof deriveKeys>,
+  expectedCommitment: Uint8Array,
+) {
+  const server = new rpc.Server(testnetEvidence.deployment.rpcUrl);
+  const health = await server.getHealth();
+  let cursor: string | undefined;
+  let spendableValue = 0n;
+  let spendableRandomness = 0n;
+  let pendingValue = 0n;
+  let pendingRandomness = 0n;
+
+  for (;;) {
+    const filters = [{ type: "contract" as const, contractIds: [TOKEN] }];
+    const response = await server.getEvents(cursor
+      ? { filters, cursor, limit: 100 }
+      : { filters, startLedger: Math.max(testnetEvidence.deployment.ledgerRange.start, health.oldestLedger), limit: 100 });
+
+    for (const event of response.events) {
+      const name = event.topic[0]?.sym().toString();
+      if (name === "merge" && topicAddress(event, 1) === account) {
+        spendableValue += pendingValue;
+        spendableRandomness = fpAdd(spendableRandomness, pendingRandomness);
+        pendingValue = 0n;
+        pendingRandomness = 0n;
+        continue;
+      }
+      if (name === "deposit" && topicAddress(event, 2) === account) {
+        pendingValue += BigInt(scValToNative(requiredEventField(eventFields(event), "amount")));
+        continue;
+      }
+      const isTransfer = name === "transfer" && topicAddress(event, 2) === account;
+      const isSpenderTransfer = name === "spender_transfer" && topicAddress(event, 3) === account;
+      if (!isTransfer && !isSpenderTransfer) continue;
+      const fields = eventFields(event);
+      const opening = decryptIncomingTransfer({
+        holderKeys,
+        rE: pointFromBytes(new Uint8Array(requiredEventField(fields, "r_e", "r_e_point").bytes())),
+        sigma: fromBytesBE(new Uint8Array(requiredEventField(fields, "sigma", "sigma_a").bytes())),
+        vTilde: fromBytesBE(new Uint8Array(requiredEventField(fields, "v_tilde").bytes())),
+      });
+      pendingValue += opening.value;
+      pendingRandomness = fpAdd(pendingRandomness, opening.randomness);
+    }
+
+    const previous = cursor;
+    cursor = response.cursor;
+    if (!cursor || cursor === previous || cursorLedger(cursor) >= response.latestLedger) break;
+  }
+
+  return opensCommitment(expectedCommitment, spendableValue, spendableRandomness)
+    ? { value: spendableValue, randomness: spendableRandomness }
+    : null;
+}
+
 function plainBidError(error: unknown): Error {
+
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes("#4004")) return bidWindowClosed();
   if (message.includes("#4006")) return new Error("This wallet could not pass the round allowlist. Retry the access check.");
@@ -515,13 +588,29 @@ export async function submitSandboxBid(
     spendableRandomness,
   );
   if (reconciledSpendable === null) {
-    throw new Error("This wallet's private balance changed during an earlier attempt and cannot be opened by this browser. Use a fresh Testnet wallet for this round.");
-  }
-  if (reconciledSpendable !== spendableValue) {
+    // The local opening no longer matches the on-chain spendable commitment —
+    // typically a second browser whose zeroed state predates an earlier merge
+    // or delegation. Rebuild the full opening (value + randomness) from the
+    // account's retained Testnet events before giving up.
+    const recovered = await recoverSpendableOpening(
+      session.address,
+      deriveKeys(BigInt(local.secret), addressToField(TOKEN)),
+      bidderAccount.spendableCommitment,
+    );
+    if (!recovered) {
+      throw new Error("This wallet's private balance changed during an earlier attempt and cannot be opened by this browser. Use a fresh Testnet wallet for this round.");
+    }
+    spendableValue = recovered.value;
+    spendableRandomness = recovered.randomness;
+    local.spendableValue = spendableValue.toString();
+    local.spendableRandomness = spendableRandomness.toString();
+    saveLocal(session.address, local);
+  } else if (reconciledSpendable !== spendableValue) {
     spendableValue = reconciledSpendable;
     local.spendableValue = spendableValue.toString();
     saveLocal(session.address, local);
   }
+
   let receivingValue = reconcilePublicDeposits(bidderAccount.receivingCommitment, 0n, 0n);
   let receivingRandomness = 0n;
   if (receivingValue === null) {
