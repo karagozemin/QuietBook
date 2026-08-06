@@ -9,11 +9,11 @@ import {
   cursorLedger,
   deriveKeys,
   fpAdd,
+  frMod,
   fromBytesBE,
   pointToBytes,
   pointFromBytes,
   proverFromArtifact,
-  randomScalar,
   setUltraHonkBackendLoader,
 } from "@ctd/sdk";
 import {
@@ -29,7 +29,7 @@ import registerArtifact from "../../../packages/sdk/circuits/register.json";
 import setSpenderArtifact from "../../../packages/sdk/circuits/set_spender.json";
 import revokeSpenderArtifact from "../../../packages/sdk/circuits/revoke_spender.json";
 import { testnetEvidence } from "./evidence";
-import { authorizeSandboxMessage, freighterSigner, latestTestnetLedger, productClient, type WalletSession } from "./wallet";
+import { authorizeSandboxMessage, deriveConfidentialSeedSignature, freighterSigner, latestTestnetLedger, productClient, type WalletSession } from "./wallet";
 
 const API = (import.meta.env.VITE_INDEXER_URL ?? "http://127.0.0.1:8787").replace(/\/$/, "");
 const DEPOSIT = 200_000_000n;
@@ -198,6 +198,38 @@ export function hasSandboxDelegation(account: string, roundId: string) {
   return Boolean(loadLocal(account)?.delegations[roundId]);
 }
 
+/**
+ * Deterministically derive the wallet's confidential spending secret from a
+ * fixed, wallet-signed message. ed25519 signatures are deterministic (RFC 8032),
+ * so the same account always yields the same scalar — in any browser, on any
+ * device. `frMod` reduces the 64-byte signature into the scalar field exactly
+ * like {@link randomScalar}'s accepted range, and a zero result (astronomically
+ * unlikely) is nudged to 1 to stay in `[1, r)`.
+ */
+async function deriveConfidentialSecret(session: WalletSession): Promise<bigint> {
+  const signature = await deriveConfidentialSeedSignature(session);
+  const scalar = frMod(fromBytesBE(signature));
+  return scalar === 0n ? 1n : scalar;
+}
+
+/**
+ * Rebuild this browser's local confidential state for an already-registered
+ * account. The secret is re-derived from the wallet signature; the spendable
+ * and receiving openings are then recovered from retained Testnet events by the
+ * bid flow's reconciliation logic, so a zeroed opening is a safe starting point.
+ */
+async function recoverLocalState(session: WalletSession): Promise<LocalConfidentialState> {
+  const secret = await deriveConfidentialSecret(session);
+  const state: LocalConfidentialState = {
+    secret: `0x${secret.toString(16).padStart(64, "0")}`,
+    spendableValue: "0",
+    spendableRandomness: "0",
+    delegations: {},
+  };
+  saveLocal(session.address, state);
+  return state;
+}
+
 export async function initializeConfidentialAccount(session: WalletSession, requireLocalState = true) {
   const client = productClient();
   let registered = false;
@@ -209,12 +241,17 @@ export async function initializeConfidentialAccount(session: WalletSession, requ
   }
   const existing = loadLocal(session.address);
   if (registered) {
-    if (!existing && requireLocalState) throw new Error("This account is registered, but its confidential key is not in this browser");
+    // The account exists on-chain but this browser has no local key material.
+    // Re-derive it deterministically from the wallet so the same account can
+    // rejoin its rounds from a second browser without ever exporting a key.
+    if (!existing && requireLocalState) {
+      await recoverLocalState(session);
+    }
     return { transaction: "", created: false };
   }
 
   await configureBrowserProver();
-  const secret = randomScalar();
+  const secret = await deriveConfidentialSecret(session);
   const keys = deriveKeys(secret, addressToField(TOKEN));
   const witness = buildAccountBoundRegisterWitness(keys, session.address);
   const prover = proverFromArtifact(registerArtifact);

@@ -108,6 +108,13 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+function base64ToBytes(value: string): Uint8Array {
+  const binary = atob(value.replace(/-/g, "+").replace(/_/g, "/"));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
 /**
  * Freighter's signMessage return type varies across versions and across the
  * extension messaging boundary. It can arrive as a base64 string, a Buffer, a
@@ -136,7 +143,34 @@ function normalizeSignedMessage(value: unknown): string {
   throw new Error("Freighter returned an unrecognized sandbox authorization signature");
 }
 
+/**
+ * Fixed, domain-separated message used to derive the wallet's confidential
+ * spending key. ed25519 signatures are deterministic (RFC 8032), so the same
+ * wallet signing this exact string always produces the same 64 bytes — in any
+ * browser, on any device. Deriving the confidential secret from this signature
+ * (instead of a per-browser `randomScalar()`) is what lets the same account
+ * rejoin its rounds from a second browser without the confidential key ever
+ * leaving the wallet.
+ */
+const CONFIDENTIAL_SEED_MESSAGE =
+  "QuietBook confidential key derivation v1. Sign to unlock your private balance. Do not sign this on any other site.";
+
+/** Deterministic 64-byte ed25519 signature over the confidential-seed message. */
+export async function deriveConfidentialSeedSignature(session: WalletSession): Promise<Uint8Array> {
+  const signed = await signMessage(CONFIDENTIAL_SEED_MESSAGE, {
+    address: session.address,
+    networkPassphrase: Networks.TESTNET,
+  });
+  if (signed.error) throw freighterError(signed.error, "Freighter rejected confidential key derivation");
+  if (!signed.signedMessage) throw new Error("Freighter returned no confidential key signature");
+  if (signed.signerAddress && signed.signerAddress !== session.address) {
+    throw new Error("Freighter derived the confidential key with a different account");
+  }
+  return base64ToBytes(normalizeSignedMessage(signed.signedMessage));
+}
+
 export async function authorizeSandboxMessage(session: WalletSession, message: string) {
+
   const signed = await signMessage(message, {
     address: session.address,
     networkPassphrase: Networks.TESTNET,
