@@ -90,11 +90,27 @@ test("live story fails honestly when public RPC is unavailable", async ({ page }
 });
 
 test("concurrent live rounds stay in the directory until one is selected", async ({ page }) => {
-  const first = sandboxRound("a".repeat(64), "G".padEnd(56, "A"), ["G".padEnd(56, "C")]);
+  const restoredWallet = "G".padEnd(56, "C");
+  await page.addInitScript(({ address, passphrase }) => {
+    (window as unknown as { freighter: boolean }).freighter = true;
+    window.addEventListener("message", (event) => {
+      if (event.source !== window || event.data?.source !== "FREIGHTER_EXTERNAL_MSG_REQUEST") return;
+      const response = event.data.type === "REQUEST_ALLOWED_STATUS"
+        ? { isAllowed: true }
+        : event.data.type === "REQUEST_PUBLIC_KEY"
+          ? { publicKey: address }
+          : event.data.type === "REQUEST_NETWORK_DETAILS"
+            ? { networkDetails: { network: "TESTNET", networkPassphrase: passphrase } }
+            : null;
+      if (response) window.postMessage({ source: "FREIGHTER_EXTERNAL_MSG_RESPONSE", messagedId: event.data.messageId, ...response }, window.location.origin);
+    });
+  }, { address: restoredWallet, passphrase: "Test SDF Network ; September 2015" });
+  const first = sandboxRound("a".repeat(64), "G".padEnd(56, "A"), [restoredWallet]);
   const second = sandboxRound("b".repeat(64), "G".padEnd(56, "B"));
   await page.route("http://127.0.0.1:8787/api/sandbox/rounds", (route) => route.fulfill({ json: { rounds: [first, second] } }));
 
   await page.goto("/");
+  await expect(page.getByText("GCCCC...CCCC", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: /Explore live round/ }).click();
   await expect(page.getByRole("heading", { name: "Choose an issuance" })).toBeVisible();
   await expect(page.getByText("2 live", { exact: true })).toBeVisible();
@@ -103,6 +119,10 @@ test("concurrent live rounds stay in the directory until one is selected", async
   await page.getByRole("button", { name: /Open round aaaaaa/ }).click();
   await expect(page.getByText(/SELECTED ROUND/)).toBeVisible();
   await expect(page.getByText("Settlement unlock", { exact: true }).first()).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Live issuance", exact: true })).toBeVisible();
+  await expect(page.getByText(/SELECTED ROUND/)).toBeVisible();
+  await expect(page.getByText(`QB / ${"a".repeat(6)}...${"a".repeat(4)}`, { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "All active rounds" }).click();
   await expect(page.getByRole("heading", { name: "Choose an issuance" })).toBeVisible();
 });

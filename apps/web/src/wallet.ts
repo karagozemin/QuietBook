@@ -1,5 +1,7 @@
 import {
+  getAddress,
   getNetwork,
+  isAllowed,
   isConnected,
   requestAccess,
   signTransaction,
@@ -59,6 +61,21 @@ export async function connectFreighter(): Promise<WalletSession> {
   }
   return {
     address: access.address,
+    network: network.network,
+    networkPassphrase: network.networkPassphrase,
+  };
+}
+
+export async function restoreFreighter(): Promise<WalletSession | null> {
+  const connection = await isConnected();
+  if (connection.error || !connection.isConnected) return null;
+  const permission = await isAllowed();
+  if (permission.error || !permission.isAllowed) return null;
+  const [account, network] = await Promise.all([getAddress(), getNetwork()]);
+  if (account.error || network.error || !account.address) return null;
+  if (network.networkPassphrase !== Networks.TESTNET) return null;
+  return {
+    address: account.address,
     network: network.network,
     networkPassphrase: network.networkPassphrase,
   };

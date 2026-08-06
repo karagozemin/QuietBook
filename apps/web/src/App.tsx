@@ -75,6 +75,27 @@ type DemoState = {
 };
 
 type IconType = typeof Eye;
+const NAVIGATION_KEY = "quietbook:navigation";
+const SELECTED_ROUND_KEY = "quietbook:live:selected-round";
+
+function restoredNavigation() {
+  try {
+    const value = JSON.parse(sessionStorage.getItem(NAVIGATION_KEY) ?? "null") as {
+      mode?: AppMode;
+      workspace?: Workspace;
+      experience?: Experience;
+    } | null;
+    return {
+      mode: value?.mode === "console" ? "console" as const : "landing" as const,
+      workspace: value?.workspace && workspaceItems.some((item) => item.id === value.workspace)
+        ? value.workspace
+        : "overview" as const,
+      experience: value?.experience === "replay" ? "replay" as const : "live" as const,
+    };
+  } catch {
+    return { mode: "landing" as const, workspace: "overview" as const, experience: "live" as const };
+  }
+}
 
 const introSlides: Array<{
   kicker: string;
@@ -866,10 +887,11 @@ function DemoTheater({ state, onClose, onEvidence }: { state: DemoState; onClose
 }
 
 export function App() {
-  const [mode, setMode] = useState<AppMode>("landing");
+  const initialNavigation = useMemo(restoredNavigation, []);
+  const [mode, setMode] = useState<AppMode>(initialNavigation.mode);
   const [introStep, setIntroStep] = useState(0);
-  const [workspace, setWorkspace] = useState<Workspace>("overview");
-  const [experience, setExperience] = useState<Experience>("live");
+  const [workspace, setWorkspace] = useState<Workspace>(initialNavigation.workspace);
+  const [experience, setExperience] = useState<Experience>(initialNavigation.experience);
   const [wallet, setWallet] = useState<WalletState>({ status: "disconnected" });
   const [live, setLive] = useState<LiveState>({ status: "checking" });
   const [eligibility, setEligibility] = useState<AsyncState>({ status: "idle" });
@@ -878,6 +900,7 @@ export function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [demo, setDemo] = useState<DemoState>({ open: false, running: false, active: 0, verified: [] });
   const demoRun = useRef(0);
+  const walletIntent = useRef(0);
 
   const refreshLive = useCallback(() => {
     setLive({ status: "checking" });
@@ -890,6 +913,29 @@ export function App() {
   useEffect(() => refreshLive(), [refreshLive]);
 
   useEffect(() => {
+    sessionStorage.setItem(NAVIGATION_KEY, JSON.stringify({ mode, workspace, experience }));
+  }, [experience, mode, workspace]);
+
+  useEffect(() => {
+    const intent = walletIntent.current;
+    void import("./wallet")
+      .then(async ({ productClient, restoreFreighter }) => {
+        const session = await restoreFreighter();
+        if (!session || walletIntent.current !== intent) return;
+        let roundStatus = "Unavailable";
+        try {
+          const round = await productClient().round(testnetEvidence.settlement.roundId);
+          const nativeStatus = round.status;
+          roundStatus = Array.isArray(nativeStatus) ? String(nativeStatus[0]) : String(nativeStatus);
+        } catch {
+          // Wallet restoration should not depend on the replay fixture RPC.
+        }
+        if (walletIntent.current === intent) setWallet({ status: "connected", session, roundStatus });
+      })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
   }, [mode, workspace]);
 
@@ -900,6 +946,7 @@ export function App() {
   }, [notice]);
 
   const connectWallet = useCallback(() => {
+    const intent = ++walletIntent.current;
     setWallet({ status: "connecting" });
     setNotice(null);
     void import("./wallet")
@@ -908,10 +955,12 @@ export function App() {
         const round = await productClient().round(testnetEvidence.settlement.roundId);
         const nativeStatus = round.status;
         const roundStatus = Array.isArray(nativeStatus) ? String(nativeStatus[0]) : String(nativeStatus);
+        if (walletIntent.current !== intent) return;
         setWallet({ status: "connected", session, roundStatus });
         setNotice(`Wallet connected · ${compact(session.address, 6, 5)}`);
       })
       .catch((error: unknown) => {
+        if (walletIntent.current !== intent) return;
         const message = error instanceof Error ? error.message : "Could not connect Freighter";
         setWallet({ status: "error", message });
         setNotice(message);
@@ -919,6 +968,7 @@ export function App() {
   }, []);
 
   const disconnectWallet = useCallback(() => {
+    walletIntent.current += 1;
     setWallet({ status: "disconnected" });
     setEligibility({ status: "idle" });
     setNotice("Wallet disconnected");
@@ -993,6 +1043,7 @@ export function App() {
   }, []);
   const returnHome = useCallback(() => {
     setSidebarOpen(false);
+    sessionStorage.removeItem(SELECTED_ROUND_KEY);
     setMode("landing");
   }, []);
   const role = useMemo(() => walletRole(wallet), [wallet]);

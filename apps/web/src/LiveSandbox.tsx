@@ -42,6 +42,7 @@ const bidSteps: Array<{ id: BidStage; label: string; detail: string }> = [
 
 const durationOptions = [2, 10, 30, 60, 180] as const;
 const LEDGER_SECONDS = 5;
+const SELECTED_ROUND_KEY = "quietbook:live:selected-round";
 
 function countdown(deadline: number, ledger: number | null, ledgerReadAt: number, now: number) {
   if (ledger === null) return "Syncing";
@@ -158,7 +159,7 @@ export function LiveSandboxPage({ session, onConnect }: {
   const [latestLedger, setLatestLedger] = useState<number | null>(null);
   const [ledgerReadAt, setLedgerReadAt] = useState(Date.now());
   const [now, setNow] = useState(Date.now());
-  const [selectedRoundId, setSelectedRoundId] = useState<string | null>(null);
+  const [selectedRoundId, setSelectedRoundId] = useState<string | null>(() => sessionStorage.getItem(SELECTED_ROUND_KEY));
   const [showCreate, setShowCreate] = useState(false);
   const [bidWindowMinutes, setBidWindowMinutes] = useState<number>(30);
   const [bid, setBid] = useState("12");
@@ -188,6 +189,11 @@ export function LiveSandboxPage({ session, onConnect }: {
     const timer = window.setInterval(() => setNow(Date.now()), 1_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (selectedRoundId) sessionStorage.setItem(SELECTED_ROUND_KEY, selectedRoundId);
+    else sessionStorage.removeItem(SELECTED_ROUND_KEY);
+  }, [selectedRoundId]);
 
   const activeRounds = useMemo(() => rounds.filter((item) => (
     !item.winner && (latestLedger === null || latestLedger <= item.settlementDeadlineLedger)
