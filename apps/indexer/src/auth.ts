@@ -84,15 +84,21 @@ export class SandboxAuth {
       throw new Error("Wallet authorization challenge is invalid or expired");
     }
     const signatureBytes = decodeSignature(signature);
-    // Freighter's signMessage behaviour varies by version: older builds sign the
-    // raw UTF-8 message bytes, current builds sign the SHA-256 hash of those bytes.
-    // Accept either so wallet authorization works across Freighter versions.
+    // Freighter's signMessage behaviour varies by version:
+    //   - older builds sign the raw UTF-8 message bytes;
+    //   - some builds sign the SHA-256 hash of those bytes;
+    //   - current builds follow SEP-0053 and sign
+    //       SHA-256("Stellar Signed Message:\n" + message).
+    // Accept every variant so wallet authorization works across Freighter versions.
     const messageBytes = Buffer.from(challenge.message, "utf8");
     const hashedBytes = createHash("sha256").update(messageBytes).digest();
+    const sep53Prefix = Buffer.from("Stellar Signed Message:\n", "utf8");
+    const sep53Bytes = Buffer.concat([sep53Prefix, messageBytes]);
+    const sep53HashedBytes = createHash("sha256").update(sep53Bytes).digest();
     const keypair = Keypair.fromPublicKey(account);
+    const candidates = [messageBytes, hashedBytes, sep53Bytes, sep53HashedBytes];
     const signatureValid = signatureBytes.length === 64
-      && (keypair.verify(messageBytes, signatureBytes)
-        || keypair.verify(hashedBytes, signatureBytes));
+      && candidates.some((candidate) => keypair.verify(candidate, signatureBytes));
     if (!signatureValid) {
       throw new Error("Wallet authorization signature is invalid");
     }
