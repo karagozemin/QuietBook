@@ -63,6 +63,8 @@ const transferArtifact = JSON.parse(readFileSync(join(root, "packages/sdk/circui
 const maxBidArtifact = JSON.parse(readFileSync(join(root, "packages/sdk/circuits/max_bid.json"), "utf8"));
 const RESERVE = 80_000_000n;
 const RWA_LOT = 10_000_000n;
+const BID_WINDOW_LEDGERS = 720;
+const SETTLEMENT_WINDOW_LEDGERS = 180;
 const LEGACY_MARKET = deployment.contracts.market.contractId;
 const LIVE_MARKET = deployment.liveMarket.contractId;
 
@@ -148,8 +150,8 @@ export class LiveSandbox {
         throw new Error("Initialize the issuer confidential account first");
       }
       const latestLedger = await chain.latestLedger();
-      const bidDeadlineLedger = latestLedger + 180;
-      const settlementDeadlineLedger = latestLedger + 300;
+      const bidDeadlineLedger = latestLedger + BID_WINDOW_LEDGERS;
+      const settlementDeadlineLedger = bidDeadlineLedger + SETTLEMENT_WINDOW_LEDGERS;
       const deployed = stellar([
         "contract", "deploy", "--wasm", controllerWasm,
         "--source", "quietbook-deployer", "--network", "testnet", "--optimize=false", "--",

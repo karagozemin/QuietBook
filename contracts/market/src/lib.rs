@@ -94,6 +94,7 @@ pub enum MarketError {
     RoundAlreadySettled = 4020,
     BidNotRegistered = 4021,
     BidNotActive = 4022,
+    InvalidDepositAmount = 4023,
 }
 
 const MAX_BIDDERS: u32 = 3;
@@ -259,59 +260,33 @@ impl QuietBookMarket {
 
     pub fn register_bid(e: Env, round_id: BytesN<32>, bidder: Address) {
         bidder.require_auth();
-        let mut round = load_round(&e, &round_id);
-        require_status(&e, &round, RoundStatus::Open, MarketError::RoundNotOpen);
-        if e.ledger().sequence() > round.config.bid_deadline_ledger {
-            panic_with(&e, MarketError::BidDeadlinePassed);
-        }
-        if e.storage()
-            .persistent()
-            .has(&DataKey::Bid(round_id.clone(), bidder.clone()))
-        {
-            panic_with(&e, MarketError::BidAlreadyRegistered);
-        }
-        let mut bidders = load_bidders(&e, &round_id);
-        if bidders.len() >= MAX_BIDDERS {
-            panic_with(&e, MarketError::BidCapacityReached);
-        }
-        if !EligibilityPolicyClient::new(&e, &round.config.eligibility_policy)
-            .is_authorized(&bidder, &round.config.confidential_token)
-        {
-            panic_with(&e, MarketError::InvestorNotAuthorized);
-        }
+        register_bid_internal(&e, &round_id, &bidder);
+    }
 
+    pub fn submit_bid(
+        e: Env,
+        round_id: BytesN<32>,
+        bidder: Address,
+        deposit_amount: i128,
+        set_spender_data: Bytes,
+    ) {
+        bidder.require_auth();
+        if deposit_amount < 0 {
+            panic_with(&e, MarketError::InvalidDepositAmount);
+        }
+        let round = validate_bid_candidate(&e, &round_id, &bidder);
         let token = ConfidentialTokenClient::new(&e, &round.config.confidential_token);
-        if !token.is_spender(&bidder, &round.config.controller) {
-            panic_with(&e, MarketError::DelegationNotFound);
+        if deposit_amount > 0 {
+            token.deposit(&bidder, &bidder, &deposit_amount);
+            token.merge(&bidder);
         }
-        let delegation = token.get_spender_delegation(&bidder, &round.config.controller);
-        if delegation.live_until_ledger < round.config.settlement_deadline_ledger {
-            panic_with(&e, MarketError::DelegationExpired);
-        }
-
-        let registration = BidRegistration {
-            round_id: round_id.clone(),
-            bidder: bidder.clone(),
-            registration_index: bidders.len(),
-            registered_ledger: e.ledger().sequence(),
-            active: true,
-        };
-        bidders.push_back(bidder.clone());
-        round.bidder_count += 1;
-        e.storage()
-            .persistent()
-            .set(&DataKey::Bid(round_id.clone(), bidder), &registration);
-        e.storage()
-            .persistent()
-            .set(&DataKey::Bidders(round_id), &bidders);
-        BidRegistered {
-            round_id: registration.round_id.clone(),
-            bidder: registration.bidder.clone(),
-            registration_index: registration.registration_index,
-            registered_ledger: registration.registered_ledger,
-        }
-        .publish(&e);
-        save_round(&e, &round);
+        token.set_spender(
+            &bidder,
+            &round.config.controller,
+            &round.config.settlement_deadline_ledger,
+            &set_spender_data,
+        );
+        register_bid_internal(&e, &round_id, &bidder);
     }
 
     pub fn withdraw_bid(e: Env, round_id: BytesN<32>, bidder: Address, revoke_data: Bytes) {
@@ -653,6 +628,67 @@ fn open_round_internal(e: &Env, round_id: &BytesN<32>) {
     RoundOpened {
         round_id: round_id.clone(),
         opened_ledger: e.ledger().sequence(),
+    }
+    .publish(e);
+    save_round(e, &round);
+}
+
+fn validate_bid_candidate(e: &Env, round_id: &BytesN<32>, bidder: &Address) -> Round {
+    let round = load_round(e, round_id);
+    require_status(e, &round, RoundStatus::Open, MarketError::RoundNotOpen);
+    if e.ledger().sequence() > round.config.bid_deadline_ledger {
+        panic_with(e, MarketError::BidDeadlinePassed);
+    }
+    if e.storage()
+        .persistent()
+        .has(&DataKey::Bid(round_id.clone(), bidder.clone()))
+    {
+        panic_with(e, MarketError::BidAlreadyRegistered);
+    }
+    if load_bidders(e, round_id).len() >= MAX_BIDDERS {
+        panic_with(e, MarketError::BidCapacityReached);
+    }
+    if !EligibilityPolicyClient::new(e, &round.config.eligibility_policy)
+        .is_authorized(bidder, &round.config.confidential_token)
+    {
+        panic_with(e, MarketError::InvestorNotAuthorized);
+    }
+    round
+}
+
+fn register_bid_internal(e: &Env, round_id: &BytesN<32>, bidder: &Address) {
+    let mut round = validate_bid_candidate(e, round_id, bidder);
+    let token = ConfidentialTokenClient::new(e, &round.config.confidential_token);
+    if !token.is_spender(bidder, &round.config.controller) {
+        panic_with(e, MarketError::DelegationNotFound);
+    }
+    let delegation = token.get_spender_delegation(bidder, &round.config.controller);
+    if delegation.live_until_ledger < round.config.settlement_deadline_ledger {
+        panic_with(e, MarketError::DelegationExpired);
+    }
+
+    let mut bidders = load_bidders(e, round_id);
+    let registration = BidRegistration {
+        round_id: round_id.clone(),
+        bidder: bidder.clone(),
+        registration_index: bidders.len(),
+        registered_ledger: e.ledger().sequence(),
+        active: true,
+    };
+    bidders.push_back(bidder.clone());
+    round.bidder_count += 1;
+    e.storage().persistent().set(
+        &DataKey::Bid(round_id.clone(), bidder.clone()),
+        &registration,
+    );
+    e.storage()
+        .persistent()
+        .set(&DataKey::Bidders(round_id.clone()), &bidders);
+    BidRegistered {
+        round_id: registration.round_id.clone(),
+        bidder: registration.bidder.clone(),
+        registration_index: registration.registration_index,
+        registered_ledger: registration.registered_ledger,
     }
     .publish(e);
     save_round(e, &round);

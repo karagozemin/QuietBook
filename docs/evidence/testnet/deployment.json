@@ -90,16 +90,25 @@
     }
   },
   "liveMarket": {
-    "contractId": "CCXR6ZZ7ZXYMRAF7UCRKYABBVWPLVYDJRSI3KH4Y5ZQQTGNSGGNXVZNU",
+    "contractId": "CB5EF3SDL4TQCXFEJ62HDSPLPZZRQUPWN7VDZMI2GRUQKCWIV5Q3JXK6",
     "transactionHashes": [
-      "0a2089169415268363bee895a97879b1820fb9e241daf524d2a70ec5240430f8",
-      "c22c4da2a0c9525e4d5b56baccf6420249032a941ff2994619705bfa34f565a7"
+      "20ea88394e77284fe4aabc1525c3f1c1f725a3857cb94d5ca38e053d39fccffa",
+      "14ef323ee112d598c5e6549d1f3c3998860a27238603d941766be712645b69cb"
     ],
-    "wasmSha256": "746d47dfbdefa237d867f8a958f8f54927405eb629ab35086d1373c388ba904c",
-    "explorer": "https://stellar.expert/explorer/testnet/contract/CCXR6ZZ7ZXYMRAF7UCRKYABBVWPLVYDJRSI3KH4Y5ZQQTGNSGGNXVZNU",
-    "feature": "Atomic create, fund, controller registration, and open for live sandbox rounds"
+    "wasmSha256": "7768f0bc4bfabccd01171cc97280ad75e6142ee09e2ab1f86112632c55c98367",
+    "explorer": "https://stellar.expert/explorer/testnet/contract/CB5EF3SDL4TQCXFEJ62HDSPLPZZRQUPWN7VDZMI2GRUQKCWIV5Q3JXK6",
+    "feature": "Atomic round opening and atomic confidential bid submission for live sandbox rounds"
   },
   "supersededContracts": {
+    "liveMarketWithoutAtomicBid": {
+      "contractId": "CCXR6ZZ7ZXYMRAF7UCRKYABBVWPLVYDJRSI3KH4Y5ZQQTGNSGGNXVZNU",
+      "transactionHashes": [
+        "0a2089169415268363bee895a97879b1820fb9e241daf524d2a70ec5240430f8",
+        "c22c4da2a0c9525e4d5b56baccf6420249032a941ff2994619705bfa34f565a7"
+      ],
+      "wasmSha256": "746d47dfbdefa237d867f8a958f8f54927405eb629ab35086d1373c388ba904c",
+      "reason": "Live market supported atomic round opening but not atomic bid funding and registration"
+    },
     "marketWithoutControllerRegistration": {
       "contractId": "CCNRJ5OFV2V2O2OMOKRNXGEWNDP3PAUZL4HVBIVUT74TLGYT4XWKTNAY",
       "transactionHashes": [

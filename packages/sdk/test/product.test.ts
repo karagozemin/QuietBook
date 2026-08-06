@@ -92,6 +92,15 @@ const atomic = await client.createAndOpenRound({
 assert.equal(atomic.roundId, roundId);
 
 const fixture = buildFixture();
+await client.submitAtomicBid({
+  roundId,
+  bidder: address,
+  controller: contract,
+  settlementDeadlineLedger: 200,
+  depositAmount: 10n,
+  witness: fixture.setSpender,
+  proof: new Uint8Array([1]),
+}, signer);
 await client.submitSealedBid({
   roundId,
   bidder: address,
@@ -115,9 +124,10 @@ await client.reclaimBid({
 
 assert.deepEqual(
   calls.map((call) => call.method),
-  ["create_round", "create_and_open_round", "set_spender", "register_bid", "withdraw_bid", "revoke_spender"],
+  ["create_round", "create_and_open_round", "submit_bid", "set_spender", "register_bid", "withdraw_bid", "revoke_spender"],
 );
-assert.equal(calls[4]!.contract, "C-MARKET");
-assert.equal(calls[5]!.contract, "C-TOKEN");
+assert.equal(calls[2]!.contract, "C-MARKET");
+assert.equal(calls[5]!.contract, "C-MARKET");
+assert.equal(calls[6]!.contract, "C-TOKEN");
 
 console.log("product orchestration checks passed");

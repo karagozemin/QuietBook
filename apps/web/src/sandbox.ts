@@ -1,4 +1,4 @@
-import { Address, nativeToScVal, xdr } from "@stellar/stellar-sdk";
+import { Address, xdr } from "@stellar/stellar-sdk";
 import initAcvm from "@noir-lang/acvm_js";
 import acvmWasmUrl from "@noir-lang/acvm_js/web/acvm_js_bg.wasm?url";
 import initNoircAbi from "@noir-lang/noirc_abi";
@@ -17,14 +17,13 @@ import {
   buildSetSpenderWitness,
   encodeRegisterData,
   encodeRevokeSpenderData,
-  encodeSetSpenderData,
   parseConfidentialAccount,
 } from "@quietbook/sdk";
 import registerArtifact from "../../../packages/sdk/circuits/register.json";
 import setSpenderArtifact from "../../../packages/sdk/circuits/set_spender.json";
 import revokeSpenderArtifact from "../../../packages/sdk/circuits/revoke_spender.json";
 import { testnetEvidence } from "./evidence";
-import { freighterSigner, productClient, type WalletSession } from "./wallet";
+import { freighterSigner, latestTestnetLedger, productClient, type WalletSession } from "./wallet";
 
 const API = import.meta.env.VITE_INDEXER_URL ?? "http://127.0.0.1:8787";
 const DEPOSIT = 200_000_000n;
@@ -77,6 +76,8 @@ type PreparedRound = {
 
 export type CreateRoundStage = "account" | "controller" | "approval" | "confirmation" | "activation";
 type CreateRoundProgress = (stage: CreateRoundStage) => void;
+export type BidStage = "validation" | "account" | "proof" | "approval" | "confirmation" | "evidence";
+type BidProgress = (stage: BidStage) => void;
 
 let proverLoaderConfigured = false;
 let noirRuntime: Promise<unknown> | null = null;
@@ -130,6 +131,10 @@ async function api<T>(path: string, input?: unknown): Promise<T> {
 
 export async function listSandboxRounds(): Promise<SandboxRound[]> {
   return (await api<{ rounds: SandboxRound[] }>("/api/sandbox/rounds")).rounds;
+}
+
+export function hasSandboxDelegation(account: string, roundId: string) {
+  return Boolean(loadLocal(account)?.delegations[roundId]);
 }
 
 export async function initializeConfidentialAccount(session: WalletSession, requireLocalState = true) {
@@ -208,30 +213,31 @@ export async function createSandboxRound(session: WalletSession, onProgress?: Cr
   });
 }
 
-export async function submitSandboxBid(session: WalletSession, round: SandboxRound, bid: bigint) {
+function bidWindowClosed(): Error {
+  return new Error("This bid window has closed. No bid transaction was submitted. Open the next issuance to continue.");
+}
+
+export async function submitSandboxBid(
+  session: WalletSession,
+  round: SandboxRound,
+  bid: bigint,
+  onProgress?: BidProgress,
+) {
   if (bid < MIN_BID || bid > DEPOSIT) throw new Error("Bid must be between 8 and 20 XLM");
+  onProgress?.("validation");
+  if (await latestTestnetLedger() > round.bidDeadlineLedger) throw bidWindowClosed();
+  onProgress?.("account");
   await initializeConfidentialAccount(session);
   const local = loadLocal(session.address);
   if (!local) throw new Error("Confidential state is unavailable in this browser");
+  onProgress?.("proof");
   await api<{ transaction: string }>("/api/sandbox/allowlist", { roundId: round.roundId, account: session.address });
 
   const client = productClient(round.market);
-  const signer = freighterSigner(session);
   let spendableValue = BigInt(local.spendableValue);
   let spendableRandomness = BigInt(local.spendableRandomness);
-  const depositReceipts: Record<string, string> = {};
-  if (spendableValue < DEPOSIT) {
-    const deposited = await client.chain.invoke(
-      TOKEN,
-      "deposit",
-      [new Address(session.address).toScVal(), new Address(session.address).toScVal(), nativeToScVal(DEPOSIT, { type: "i128" })],
-      signer,
-    );
-    const merged = await client.chain.invoke(TOKEN, "merge", [new Address(session.address).toScVal()], signer);
-    spendableValue += DEPOSIT;
-    depositReceipts.deposit = deposited.hash;
-    depositReceipts.merge = merged.hash;
-  }
+  const depositAmount = spendableValue < DEPOSIT ? DEPOSIT - spendableValue : 0n;
+  spendableValue += depositAmount;
 
   await configureBrowserProver();
   const accountValue = await client.chain.simulate(TOKEN, "confidential_balance", [new Address(round.controller).toScVal()]);
@@ -252,17 +258,32 @@ export async function submitSandboxBid(session: WalletSession, round: SandboxRou
   const prover = proverFromArtifact(setSpenderArtifact);
   try {
     const generated = await prover.prove(witness.inputs);
-    const delegated = await client.chain.invoke(
-      TOKEN,
-      "set_spender",
-      [
-        new Address(session.address).toScVal(),
-        new Address(round.controller).toScVal(),
-        xdr.ScVal.scvU32(round.settlementDeadlineLedger),
-        encodeSetSpenderData(witness, generated.proof),
-      ],
-      signer,
-    );
+    if (await latestTestnetLedger() > round.bidDeadlineLedger) throw bidWindowClosed();
+    const walletSigner = freighterSigner(session);
+    const signer = {
+      publicKey: walletSigner.publicKey,
+      async sign(txXdrBase64: string) {
+        onProgress?.("approval");
+        const signed = await walletSigner.sign(txXdrBase64);
+        onProgress?.("confirmation");
+        return signed;
+      },
+    };
+    let submitted;
+    try {
+      submitted = await client.submitAtomicBid({
+        roundId: round.roundId,
+        bidder: session.address,
+        controller: round.controller,
+        settlementDeadlineLedger: round.settlementDeadlineLedger,
+        depositAmount,
+        witness,
+        proof: generated.proof,
+      }, signer);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("#4004")) throw bidWindowClosed();
+      throw error;
+    }
     local.spendableValue = witness.nextSpendable.value.toString();
     local.spendableRandomness = witness.nextSpendable.randomness.toString();
     local.delegations[round.roundId] = {
@@ -272,22 +293,17 @@ export async function submitSandboxBid(session: WalletSession, round: SandboxRou
       sigmaA: witness.delegation.sigmaA.toString(),
     };
     saveLocal(session.address, local);
-    const registered = await client.chain.invoke(
-      round.market,
-      "register_bid",
-      [nativeToScVal(Uint8Array.from(round.roundId.match(/.{2}/g) ?? [], (byte) => Number.parseInt(byte, 16)), { type: "bytes" }), new Address(session.address).toScVal()],
-      signer,
-    );
+    onProgress?.("evidence");
     await api("/api/sandbox/bids", {
       roundId: round.roundId,
       opening: {
         account: session.address,
         ...local.delegations[round.roundId],
-        delegationTransaction: delegated.hash,
-        registrationTransaction: registered.hash,
+        delegationTransaction: submitted.hash,
+        registrationTransaction: submitted.hash,
       },
     });
-    return { delegationTransaction: delegated.hash, registrationTransaction: registered.hash, ...depositReceipts };
+    return { bidTransaction: submitted.hash, registrationTransaction: submitted.hash };
   } finally {
     await prover.destroy();
   }
@@ -298,8 +314,10 @@ export async function settleSandboxRound(roundId: string) {
 }
 
 export async function reclaimSandboxBid(session: WalletSession, round: SandboxRound) {
-  if (!round.winner) throw new Error("Round is not settled yet");
   if (round.winner === session.address) throw new Error("The winning bid was consumed by settlement");
+  if (!round.winner && await latestTestnetLedger() <= round.bidDeadlineLedger) {
+    throw new Error("The bid is still active and cannot be reclaimed yet");
+  }
   const local = loadLocal(session.address);
   const delegation = local?.delegations[round.roundId];
   if (!local || !delegation) throw new Error("This browser does not hold the bid opening");

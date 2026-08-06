@@ -41,6 +41,10 @@ export type SealedBidInput = {
   proof: Uint8Array;
 };
 
+export type AtomicBidInput = SealedBidInput & {
+  depositAmount: bigint;
+};
+
 export type ReclaimBidInput = {
   account: string;
   controller: string;
@@ -166,6 +170,20 @@ export class QuietBookClient {
       signer,
     );
     return { delegationTransaction: delegated.hash, registrationTransaction: registered.hash };
+  }
+
+  async submitAtomicBid(input: AtomicBidInput, signer: Signer) {
+    return this.chain.invoke(
+      this.contracts.market,
+      "submit_bid",
+      [
+        bytes32(input.roundId),
+        address(input.bidder),
+        nativeToScVal(input.depositAmount, { type: "i128" }),
+        encodeSetSpenderData(input.witness, input.proof),
+      ],
+      signer,
+    );
   }
 
   async withdrawBid(

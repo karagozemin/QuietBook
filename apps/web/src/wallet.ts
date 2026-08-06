@@ -150,6 +150,11 @@ export function productClient(market = testnetEvidence.deployment.contracts.mark
   );
 }
 
+export async function latestTestnetLedger() {
+  const server = new rpc.Server(testnetEvidence.deployment.rpcUrl);
+  return (await server.getLatestLedger()).sequence;
+}
+
 export async function checkPolicyEligibility(account: string): Promise<boolean> {
   const client = productClient();
   const result = await client.chain.simulate(

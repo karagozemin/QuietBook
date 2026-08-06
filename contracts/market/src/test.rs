@@ -30,6 +30,35 @@ struct MockConfidentialToken;
 
 #[contractimpl]
 impl MockConfidentialToken {
+    pub fn deposit(e: Env, from: Address, _to: Address, amount: i128) {
+        from.require_auth();
+        e.storage().instance().set(&10u32, &amount);
+    }
+
+    pub fn merge(e: Env, account: Address) {
+        account.require_auth();
+        e.storage().instance().set(&11u32, &true);
+    }
+
+    pub fn set_spender(
+        e: Env,
+        account: Address,
+        spender: Address,
+        live_until_ledger: u32,
+        _data: Bytes,
+    ) {
+        account.require_auth();
+        Self::set_delegation(e, account, spender, live_until_ledger);
+    }
+
+    pub fn deposited(e: Env) -> i128 {
+        e.storage().instance().get(&10u32).unwrap_or(0)
+    }
+
+    pub fn merged(e: Env) -> bool {
+        e.storage().instance().get(&11u32).unwrap_or(false)
+    }
+
     pub fn set_delegation(e: Env, owner: Address, spender: Address, live_until_ledger: u32) {
         e.storage().persistent().set(
             &(owner, spender),
@@ -270,6 +299,46 @@ fn round_requires_escrow_then_registers_only_live_eligible_bidder() {
         soroban_sdk::vec![&h.e, h.investor.clone()]
     );
     assert!(h.market.get_bid(&id, &h.investor).is_some());
+}
+
+#[test]
+fn submit_bid_atomically_funds_delegates_and_registers_with_one_authorization() {
+    let h = setup();
+    let id = funded_open_round(&h);
+    h.policy.set(&h.investor, &true);
+
+    h.market
+        .submit_bid(&id, &h.investor, &20, &Bytes::new(&h.e));
+
+    let auths = h.e.auths();
+    assert_eq!(auths.len(), 1);
+    assert_eq!(auths[0].0, h.investor);
+    assert_eq!(h.confidential.deposited(), 20);
+    assert!(h.confidential.merged());
+    assert!(h
+        .confidential
+        .is_spender(&h.investor, &h.controller.address));
+    assert_eq!(h.market.get_round(&id).bidder_count, 1);
+    assert!(h.market.get_bid(&id, &h.investor).unwrap().active);
+}
+
+#[test]
+fn expired_atomic_bid_fails_before_funding_or_delegation() {
+    let h = setup();
+    let id = funded_open_round(&h);
+    h.policy.set(&h.investor, &true);
+    h.e.ledger().set_sequence_number(201);
+
+    assert!(h
+        .market
+        .try_submit_bid(&id, &h.investor, &20, &Bytes::new(&h.e))
+        .is_err());
+    assert_eq!(h.confidential.deposited(), 0);
+    assert!(!h.confidential.merged());
+    assert!(!h
+        .confidential
+        .is_spender(&h.investor, &h.controller.address));
+    assert_eq!(h.market.get_round(&id).bidder_count, 0);
 }
 
 #[test]
