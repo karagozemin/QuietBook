@@ -65,6 +65,11 @@ ENV QUIETBOOK_CONTROLLER_WASM=/app/contracts/quietbook_round_controller.wasm
 ENV QUIETBOOK_STELLAR_BIN=/usr/local/bin/stellar
 ENV STELLAR_NO_CACHE=true
 ENV XDG_CONFIG_HOME=/data/stellar-config
+# Barretenberg (bb.js) caches its CRS under $HOME/.bb-crs. Point HOME at the
+# persistent, node-writable data volume so proof generation can create it and
+# the CRS is only downloaded once across restarts.
+ENV HOME=/data
+ENV BB_CRS_PATH=/data/.bb-crs
 
 WORKDIR /app
 COPY --from=app-builder --chown=node:node /runtime/ /app/
