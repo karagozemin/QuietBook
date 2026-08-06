@@ -1,0 +1,80 @@
+# syntax=docker/dockerfile:1.7
+
+FROM node:24-bookworm-slim AS stellar-cli
+ARG TARGETARCH
+ARG STELLAR_CLI_VERSION=27.0.0
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates curl dumb-init libdbus-1-3 \
+  && rm -rf /var/lib/apt/lists/* \
+  && case "$TARGETARCH" in \
+    amd64) stellar_arch=x86_64; stellar_sha=357bf712f6353c28cd33c794402a3c87231757a5b305e6ef1604365af4fdd556 ;; \
+    arm64) stellar_arch=aarch64; stellar_sha=a341adcc152e1865ea61d6c332e75b3d82b1f2f32108198fac97c50878b17034 ;; \
+    *) echo "Unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
+  esac \
+  && archive="stellar-cli-${STELLAR_CLI_VERSION}-${stellar_arch}-unknown-linux-gnu.tar.gz" \
+  && curl -sSfL "https://github.com/stellar/stellar-cli/releases/download/v${STELLAR_CLI_VERSION}/${archive}" -o /tmp/stellar.tar.gz \
+  && echo "${stellar_sha}  /tmp/stellar.tar.gz" | sha256sum -c - \
+  && tar -xzf /tmp/stellar.tar.gz -C /usr/local/bin stellar \
+  && rm /tmp/stellar.tar.gz \
+  && stellar --version
+
+FROM rust:1.92-bookworm AS controller-builder
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends libdbus-1-3 \
+  && rm -rf /var/lib/apt/lists/*
+COPY --from=stellar-cli /usr/local/bin/stellar /usr/local/bin/stellar
+WORKDIR /source
+COPY contracts ./contracts
+RUN rustup target add wasm32v1-none \
+  && stellar contract build \
+    --manifest-path contracts/Cargo.toml \
+    --package quietbook-round-controller \
+    --locked
+
+FROM node:24-bookworm-slim AS app-builder
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates git \
+  && rm -rf /var/lib/apt/lists/* \
+  && corepack enable \
+  && corepack prepare pnpm@10.33.0 --activate
+WORKDIR /app
+COPY . .
+RUN bash scripts/bootstrap-sdk.sh \
+  && pnpm install --frozen-lockfile \
+  && pnpm build:sdk \
+  && pnpm build:indexer \
+  && pnpm --filter @quietbook/indexer deploy --legacy --prod /runtime/apps/indexer \
+  && cp -R apps/indexer/dist /runtime/apps/indexer/dist \
+  && mkdir -p /runtime/docs/evidence/testnet /runtime/packages/sdk/circuits \
+  && cp docs/evidence/testnet/*.json /runtime/docs/evidence/testnet/ \
+  && cp packages/sdk/circuits/register.json /runtime/packages/sdk/circuits/ \
+  && cp packages/sdk/circuits/spender_transfer.json /runtime/packages/sdk/circuits/ \
+  && cp packages/sdk/circuits/max_bid.json /runtime/packages/sdk/circuits/
+
+FROM stellar-cli AS runtime
+
+ENV NODE_ENV=production
+ENV NODE_OPTIONS=--max-old-space-size=6144
+ENV QUIETBOOK_INDEXER_HOST=0.0.0.0
+ENV QUIETBOOK_INDEXER_PORT=8787
+ENV QUIETBOOK_INDEXER_DB=/data/indexer.sqlite
+ENV QUIETBOOK_SANDBOX_STATE=/data/live-sandbox-private.json
+ENV QUIETBOOK_CONTROLLER_WASM=/app/contracts/quietbook_round_controller.wasm
+ENV QUIETBOOK_STELLAR_BIN=/usr/local/bin/stellar
+ENV STELLAR_NO_CACHE=true
+ENV XDG_CONFIG_HOME=/data/stellar-config
+
+WORKDIR /app
+COPY --from=app-builder --chown=node:node /runtime/ /app/
+COPY --from=controller-builder --chown=node:node \
+  /source/contracts/target/wasm32v1-none/release/quietbook_round_controller.wasm \
+  /app/contracts/quietbook_round_controller.wasm
+RUN mkdir -p /data /app/contracts \
+  && chown -R node:node /data /app
+
+USER node
+EXPOSE 8787
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["node", "apps/indexer/dist/src/server.js"]

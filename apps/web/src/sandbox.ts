@@ -29,9 +29,9 @@ import registerArtifact from "../../../packages/sdk/circuits/register.json";
 import setSpenderArtifact from "../../../packages/sdk/circuits/set_spender.json";
 import revokeSpenderArtifact from "../../../packages/sdk/circuits/revoke_spender.json";
 import { testnetEvidence } from "./evidence";
-import { freighterSigner, latestTestnetLedger, productClient, type WalletSession } from "./wallet";
+import { authorizeSandboxMessage, freighterSigner, latestTestnetLedger, productClient, type WalletSession } from "./wallet";
 
-const API = import.meta.env.VITE_INDEXER_URL ?? "http://127.0.0.1:8787";
+const API = (import.meta.env.VITE_INDEXER_URL ?? "http://127.0.0.1:8787").replace(/\/$/, "");
 const DEPOSIT = 200_000_000n;
 const MIN_BID = 80_000_000n;
 const LEDGERS_PER_MINUTE = 12;
@@ -128,13 +128,64 @@ function deploymentAuditorKey() {
   ));
 }
 
-async function api<T>(path: string, input?: unknown): Promise<T> {
+type SandboxApiSession = { token: string; account: string; expiresAt: string };
+
+function apiSessionKey(account: string) {
+  return `quietbook:sandbox-api:${API}:${account}`;
+}
+
+async function request<T>(path: string, input?: unknown, token?: string) {
   const response = await fetch(`${API}${path}`, input === undefined ? undefined : {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify(input),
   });
   const result = await response.json() as T & { error?: string };
+  return { response, result };
+}
+
+async function sandboxApiToken(session: WalletSession, force = false) {
+  const key = apiSessionKey(session.address);
+  if (!force) {
+    try {
+      const cached = JSON.parse(sessionStorage.getItem(key) ?? "null") as SandboxApiSession | null;
+      if (cached?.account === session.address && Date.parse(cached.expiresAt) > Date.now() + 30_000) {
+        return cached.token;
+      }
+    } catch {
+      sessionStorage.removeItem(key);
+    }
+  }
+  const challengeResult = await request<{ nonce: string; message: string; expiresAt: string }>(
+    "/api/auth/challenge",
+    { account: session.address },
+  );
+  if (!challengeResult.response.ok) {
+    throw new Error(challengeResult.result.error ?? "Could not start wallet API authorization");
+  }
+  const signature = await authorizeSandboxMessage(session, challengeResult.result.message);
+  const verification = await request<SandboxApiSession>("/api/auth/verify", {
+    account: session.address,
+    nonce: challengeResult.result.nonce,
+    signature,
+  });
+  if (!verification.response.ok) {
+    throw new Error(verification.result.error ?? "Wallet API authorization failed");
+  }
+  sessionStorage.setItem(key, JSON.stringify(verification.result));
+  return verification.result.token;
+}
+
+async function api<T>(path: string, input?: unknown, session?: WalletSession, retried = false): Promise<T> {
+  const token = session ? await sandboxApiToken(session, retried) : undefined;
+  const { response, result } = await request<T>(path, input, token);
+  if (response.status === 401 && session && !retried) {
+    sessionStorage.removeItem(apiSessionKey(session.address));
+    return api<T>(path, input, session, true);
+  }
   if (!response.ok) throw new Error(result.error ?? `Sandbox request failed (${response.status})`);
   return result;
 }
@@ -198,7 +249,7 @@ export async function createSandboxRound(
   const prepared = await api<PreparedRound>("/api/sandbox/prepare", {
     issuer: session.address,
     bidWindowLedgers: bidWindowMinutes * LEDGERS_PER_MINUTE,
-  });
+  }, session);
   const client = productClient(LIVE_MARKET);
   const walletSigner = freighterSigner(session);
   const signer = {
@@ -227,7 +278,7 @@ export async function createSandboxRound(
     receipts: {
       createAndOpenRound: opened.transaction,
     },
-  });
+  }, session);
 }
 
 function bidWindowClosed(): Error {
@@ -355,7 +406,7 @@ export async function submitSandboxBid(
   const local = loadLocal(session.address);
   if (!local) throw new Error("Confidential state is unavailable in this browser");
   onProgress?.("access");
-  await api<{ transaction: string }>("/api/sandbox/allowlist", { roundId: round.roundId, account: session.address });
+  await api<{ transaction: string }>("/api/sandbox/allowlist", { roundId: round.roundId, account: session.address }, session);
 
   const client = productClient(round.market);
   onProgress?.("balance");
@@ -409,7 +460,7 @@ export async function submitSandboxBid(
         delegationTransaction: transaction,
         registrationTransaction: transaction,
       },
-    });
+    }, session);
     return { bidTransaction: transaction, registrationTransaction: transaction };
   }
   if (savedDelegation) {
@@ -524,15 +575,15 @@ export async function submitSandboxBid(
         delegationTransaction: submitted.hash,
         registrationTransaction: submitted.hash,
       },
-    });
+    }, session);
     return { bidTransaction: submitted.hash, registrationTransaction: submitted.hash };
   } finally {
     await prover.destroy();
   }
 }
 
-export async function settleSandboxRound(roundId: string) {
-  return api<SandboxRound>("/api/sandbox/settle", { roundId });
+export async function settleSandboxRound(session: WalletSession, roundId: string) {
+  return api<SandboxRound>("/api/sandbox/settle", { roundId }, session);
 }
 
 export async function reclaimSandboxBid(session: WalletSession, round: SandboxRound) {

@@ -1,0 +1,65 @@
+services:
+  indexer:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.indexer
+    image: quietbook-indexer:${QUIETBOOK_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file:
+      - ${QUIETBOOK_ENV_FILE:-.env.production}
+    environment:
+      NODE_ENV: production
+      QUIETBOOK_INDEXER_HOST: 0.0.0.0
+      QUIETBOOK_INDEXER_PORT: 8787
+      QUIETBOOK_INDEXER_DB: /data/indexer.sqlite
+      QUIETBOOK_SANDBOX_STATE: /data/live-sandbox-private.json
+      QUIETBOOK_CONTROLLER_WASM: /app/contracts/quietbook_round_controller.wasm
+      QUIETBOOK_STELLAR_BIN: /usr/local/bin/stellar
+      XDG_CONFIG_HOME: /data/stellar-config
+      STELLAR_NO_CACHE: "true"
+    expose:
+      - "8787"
+    volumes:
+      - quietbook-data:/data
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 7g
+    cpus: 4
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 8s
+      retries: 5
+      start_period: 45s
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      indexer:
+        condition: service_healthy
+    environment:
+      QUIETBOOK_API_DOMAIN: ${QUIETBOOK_API_DOMAIN:?QUIETBOOK_API_DOMAIN is required}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  quietbook-data:
+    name: quietbook-data
+  caddy-data:
+    name: quietbook-caddy-data
+  caddy-config:
+    name: quietbook-caddy-config

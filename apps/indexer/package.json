@@ -10,7 +10,7 @@
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/server.ts",
     "sync": "tsx src/sync-cli.ts",
-    "test": "tsx --test test/indexer.test.ts"
+    "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
     "@ctd/sdk": "workspace:*",

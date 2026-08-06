@@ -4,6 +4,7 @@ import {
   isAllowed,
   isConnected,
   requestAccess,
+  signMessage,
   signTransaction,
 } from "@stellar/freighter-api";
 import {
@@ -99,6 +100,21 @@ export function freighterSigner(session: WalletSession): BrowserSigner {
       return signed.signedTxXdr;
     },
   };
+}
+
+export async function authorizeSandboxMessage(session: WalletSession, message: string) {
+  const signed = await signMessage(message, {
+    address: session.address,
+    networkPassphrase: Networks.TESTNET,
+  });
+  if (signed.error) throw freighterError(signed.error, "Freighter rejected sandbox authorization");
+  if (!signed.signedMessage) throw new Error("Freighter returned no sandbox authorization signature");
+  if (signed.signerAddress && signed.signerAddress !== session.address) {
+    throw new Error("Freighter authorized the sandbox with a different account");
+  }
+  return typeof signed.signedMessage === "string"
+    ? signed.signedMessage
+    : signed.signedMessage.toString("base64");
 }
 
 export class BrowserProductChain implements ProductChain {

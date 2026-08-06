@@ -278,9 +278,10 @@ export function LiveSandboxPage({ session, onConnect }: {
 
   const settle = async () => {
     if (!round) return;
+    if (!session) return onConnect();
     setAction({ status: "loading", label: "Closing book and generating maximum-bid proof" });
     try {
-      const result = await settleSandboxRound(round.roundId);
+      const result = await settleSandboxRound(session, round.roundId);
       setRounds((current) => [result, ...current.filter((item) => item.roundId !== result.roundId)]);
       setAction({ status: "success", label: "Round settled atomically", hash: result.receipts.finalize });
     } catch (error) {

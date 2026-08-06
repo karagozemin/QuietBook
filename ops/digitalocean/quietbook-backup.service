@@ -1,0 +1,10 @@
+[Unit]
+Description=QuietBook private-state backup
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/quietbook/ops/digitalocean
+Environment=QUIETBOOK_BACKUP_DIR=/var/backups/quietbook
+ExecStart=/opt/quietbook/ops/digitalocean/backup.sh

@@ -1,0 +1,16 @@
+.git
+.github
+.quietbook
+.tools
+.upstream
+**/node_modules
+**/dist
+**/target
+apps/web/playwright-report
+apps/web/test-results
+QuietBook_PRD_v1.0.pdf
+*.pdf
+.env
+.env.*
+!.env.example
+ops/digitalocean/.env.production

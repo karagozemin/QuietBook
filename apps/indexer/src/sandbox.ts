@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { Address, Networks, nativeToScVal, xdr } from "@stellar/stellar-sdk";
 import {
@@ -19,8 +19,14 @@ import {
   encodeRegisterData,
   encodeSpenderTransferData,
 } from "@quietbook/sdk";
-import deployment from "../../../docs/evidence/testnet/deployment.json" with { type: "json" };
-import { root } from "./config.js";
+import {
+  controllerWasmPath,
+  deployment,
+  identitySecret,
+  root,
+  sandboxStatePath,
+  stellarBin,
+} from "./config.js";
 
 type ReceiptMap = Record<string, string>;
 type BidOpening = {
@@ -56,8 +62,6 @@ type SandboxState = {
   rounds: Record<string, SandboxRound>;
 };
 
-const statePath = join(root, ".quietbook/live-sandbox-private.json");
-const controllerWasm = join(root, "contracts/target/wasm32v1-none/release/quietbook_round_controller.wasm");
 const registerArtifact = JSON.parse(readFileSync(join(root, "packages/sdk/circuits/register.json"), "utf8"));
 const transferArtifact = JSON.parse(readFileSync(join(root, "packages/sdk/circuits/spender_transfer.json"), "utf8"));
 const maxBidArtifact = JSON.parse(readFileSync(join(root, "packages/sdk/circuits/max_bid.json"), "utf8"));
@@ -71,19 +75,22 @@ const LEGACY_MARKET = deployment.contracts.market.contractId;
 const LIVE_MARKET = deployment.liveMarket.contractId;
 
 function readState(): SandboxState {
-  if (!existsSync(statePath)) return { pending: {}, rounds: {} };
-  return JSON.parse(readFileSync(statePath, "utf8")) as SandboxState;
+  if (!existsSync(sandboxStatePath)) return { pending: {}, rounds: {} };
+  return JSON.parse(readFileSync(sandboxStatePath, "utf8")) as SandboxState;
 }
 
 function saveState(state: SandboxState) {
-  writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
+  mkdirSync(dirname(sandboxStatePath), { recursive: true });
+  const temporary = `${sandboxStatePath}.${process.pid}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
+  renameSync(temporary, sandboxStatePath);
 }
 
-function stellar(args: string[]) {
-  const stellarBin = existsSync("/opt/homebrew/bin/stellar")
-    ? "/opt/homebrew/bin/stellar"
-    : "stellar";
-  const result = spawnSync(stellarBin, args, { encoding: "utf8" });
+function stellar(args: string[], environment?: Record<string, string>) {
+  const result = spawnSync(stellarBin, args, {
+    encoding: "utf8",
+    env: { ...process.env, ...environment },
+  });
   const combined = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
   if (result.status !== 0) {
     const detail = result.error?.message ?? combined.trim().replace(/\s+/g, " ").slice(-600);
@@ -96,7 +103,9 @@ function stellar(args: string[]) {
 }
 
 function secret(identity: string) {
-  const result = spawnSync("stellar", ["keys", "show", identity], { encoding: "utf8" });
+  const configured = identitySecret(identity as "quietbook-deployer" | "quietbook-issuer" | "quietbook-operator");
+  if (configured) return configured;
+  const result = spawnSync(stellarBin, ["keys", "show", identity], { encoding: "utf8" });
   if (result.status !== 0 || !result.stdout.trim().startsWith("S")) {
     throw new Error(`Missing local Testnet identity: ${identity}`);
   }
@@ -166,13 +175,15 @@ export class LiveSandbox {
       const bidDeadlineLedger = latestLedger + bidWindowLedgers;
       const settlementDeadlineLedger = bidDeadlineLedger + SETTLEMENT_WINDOW_LEDGERS;
       const deployed = stellar([
-        "contract", "deploy", "--wasm", controllerWasm,
-        "--source", "quietbook-deployer", "--network", "testnet", "--optimize=false", "--",
+        "contract", "deploy", "--wasm", controllerWasmPath,
+        "--rpc-url", deployment.rpcUrl,
+        "--network-passphrase", Networks.TESTNET,
+        "--optimize=false", "--",
         "--market", LIVE_MARKET,
         "--confidential_token", deployment.contracts.confidentialToken.contractId,
         "--issuer_recipient", issuer,
         "--settlement_deadline_ledger", String(settlementDeadlineLedger),
-      ]);
+      ], { STELLAR_ACCOUNT: secret("quietbook-deployer") });
       const controller = deployed.stdout.split(/\s+/).reverse().find((value: string) => value.startsWith("C"));
       if (!controller) throw new Error("Controller id was not returned by Stellar CLI");
 
@@ -233,10 +244,11 @@ export class LiveSandbox {
     });
   }
 
-  activate(input: { setupId: string; roundId: string; receipts: ReceiptMap }) {
+  activate(input: { setupId: string; roundId: string; receipts: ReceiptMap }, actor: string) {
     const state = readState();
     const pending = state.pending[input.setupId];
     if (!pending || !/^[0-9a-f]{64}$/i.test(input.roundId)) throw new Error("Unknown round preparation");
+    if (pending.issuer !== actor) throw new Error("Only the preparing issuer can activate this round");
     const round: SandboxRound = {
       ...pending,
       roundId: input.roundId,
@@ -250,10 +262,11 @@ export class LiveSandbox {
     return publicRound(round);
   }
 
-  allowlist(roundId: string, account: string) {
+  allowlist(roundId: string, account: string, actor: string) {
     return this.exclusive(async () => {
       const state = readState();
       if (!state.rounds[roundId]) throw new Error("Live round not found");
+      if (account !== actor) throw new Error("Wallet session does not match the allowlist account");
       new Address(account);
       const result = await client().invoke(
         deployment.contracts.eligibilityPolicy.contractId,
@@ -265,24 +278,33 @@ export class LiveSandbox {
     });
   }
 
-  recordBid(roundId: string, opening: BidOpening) {
+  recordBid(roundId: string, opening: BidOpening, actor: string) {
     const state = readState();
     const round = state.rounds[roundId];
     if (!round) throw new Error("Live round not found");
+    if (opening.account !== actor) throw new Error("Wallet session does not match the bid account");
     if (Object.keys(round.bids).length >= 3 && !round.bids[opening.account]) throw new Error("Round capacity reached");
     new Address(opening.account);
     for (const value of [opening.value, opening.randomness, opening.dvk, opening.sigmaA]) BigInt(value);
+    const existing = round.bids[opening.account];
+    if (existing) {
+      if (JSON.stringify(existing) !== JSON.stringify(opening)) {
+        throw new Error("A different private opening is already recorded for this wallet");
+      }
+      return { accepted: true };
+    }
     round.bids[opening.account] = opening;
     round.receipts[`bid:${opening.account}`] = opening.registrationTransaction;
     saveState(state);
     return { accepted: true };
   }
 
-  settle(roundId: string) {
+  settle(roundId: string, actor: string) {
     return this.exclusive(async () => {
       const state = readState();
       const round = state.rounds[roundId];
       if (!round) throw new Error("Live round not found");
+      if (round.issuer !== actor) throw new Error("Only the round issuer can start settlement");
       const market = round.market ?? LEGACY_MARKET;
       const chain = client();
       const operator = keypairSigner(secret("quietbook-operator"), Networks.TESTNET);

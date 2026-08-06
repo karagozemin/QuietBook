@@ -74,4 +74,4 @@ pnpm audit:round:testnet
 pnpm disclose:settlement:testnet
 ```
 
-See [docs/implementation-order.md](docs/implementation-order.md) for the dependency sequence, [docs/architecture/0001-p0-integration-spike.md](docs/architecture/0001-p0-integration-spike.md) for protocol drift findings, [docs/evidence/README.md](docs/evidence/README.md) for reviewer evidence, and [docs/deployment.md](docs/deployment.md) for public deployment constraints.
+See [docs/implementation-order.md](docs/implementation-order.md) for the dependency sequence, [docs/architecture/0001-p0-integration-spike.md](docs/architecture/0001-p0-integration-spike.md) for protocol drift findings, [docs/evidence/README.md](docs/evidence/README.md) for reviewer evidence, [docs/deployment.md](docs/deployment.md) for the hosting model, and [ops/digitalocean/README.md](ops/digitalocean/README.md) for the production backend runbook.
