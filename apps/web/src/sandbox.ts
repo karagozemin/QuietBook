@@ -1,4 +1,4 @@
-import { Address, nativeToScVal, scValToNative, xdr } from "@stellar/stellar-sdk";
+import { Address, nativeToScVal, rpc, scValToNative, xdr } from "@stellar/stellar-sdk";
 import initAcvm from "@noir-lang/acvm_js";
 import acvmWasmUrl from "@noir-lang/acvm_js/web/acvm_js_bg.wasm?url";
 import initNoircAbi from "@noir-lang/noirc_abi";
@@ -6,7 +6,10 @@ import noircAbiWasmUrl from "@noir-lang/noirc_abi/web/noirc_abi_wasm_bg.wasm?url
 import {
   addressToField,
   commit,
+  cursorLedger,
   deriveKeys,
+  fpAdd,
+  fromBytesBE,
   pointToBytes,
   pointFromBytes,
   proverFromArtifact,
@@ -17,6 +20,7 @@ import {
   buildAccountBoundRegisterWitness,
   buildRevokeSpenderWitness,
   buildSetSpenderWitness,
+  decryptIncomingTransfer,
   encodeRegisterData,
   encodeRevokeSpenderData,
   parseConfidentialAccount,
@@ -247,6 +251,75 @@ function reconcilePublicDeposits(commitment: Uint8Array, value: bigint, randomne
   return null;
 }
 
+function topicAddress(event: rpc.Api.EventResponse, index: number) {
+  const topic = event.topic[index];
+  return topic ? String(scValToNative(topic)) : "";
+}
+
+function eventFields(event: rpc.Api.EventResponse) {
+  return new Map((event.value.map() ?? []).map((entry) => [entry.key().sym().toString(), entry.val()]));
+}
+
+function requiredEventField(fields: Map<string, xdr.ScVal>, ...names: string[]) {
+  for (const name of names) {
+    const value = fields.get(name);
+    if (value) return value;
+  }
+  throw new Error(`Confidential event is missing ${names.join(" or ")}`);
+}
+
+async function recoverReceivingOpening(
+  account: string,
+  holderKeys: ReturnType<typeof deriveKeys>,
+  expectedCommitment: Uint8Array,
+) {
+  const server = new rpc.Server(testnetEvidence.deployment.rpcUrl);
+  const health = await server.getHealth();
+  let cursor: string | undefined;
+  let value = 0n;
+  let randomness = 0n;
+
+  for (;;) {
+    const filters = [{ type: "contract" as const, contractIds: [TOKEN] }];
+    const response = await server.getEvents(cursor
+      ? { filters, cursor, limit: 100 }
+      : { filters, startLedger: Math.max(testnetEvidence.deployment.ledgerRange.start, health.oldestLedger), limit: 100 });
+
+    for (const event of response.events) {
+      const name = event.topic[0]?.sym().toString();
+      if (name === "merge" && topicAddress(event, 1) === account) {
+        value = 0n;
+        randomness = 0n;
+        continue;
+      }
+      if (name === "deposit" && topicAddress(event, 2) === account) {
+        value += BigInt(scValToNative(requiredEventField(eventFields(event), "amount")));
+        continue;
+      }
+      const isTransfer = name === "transfer" && topicAddress(event, 2) === account;
+      const isSpenderTransfer = name === "spender_transfer" && topicAddress(event, 3) === account;
+      if (!isTransfer && !isSpenderTransfer) continue;
+      const fields = eventFields(event);
+      const opening = decryptIncomingTransfer({
+        holderKeys,
+        rE: pointFromBytes(new Uint8Array(requiredEventField(fields, "r_e", "r_e_point").bytes())),
+        sigma: fromBytesBE(new Uint8Array(requiredEventField(fields, "sigma", "sigma_a").bytes())),
+        vTilde: fromBytesBE(new Uint8Array(requiredEventField(fields, "v_tilde").bytes())),
+      });
+      value += opening.value;
+      randomness = fpAdd(randomness, opening.randomness);
+    }
+
+    const previous = cursor;
+    cursor = response.cursor;
+    if (!cursor || cursor === previous || cursorLedger(cursor) >= response.latestLedger) break;
+  }
+
+  return opensCommitment(expectedCommitment, value, randomness)
+    ? { value, randomness }
+    : null;
+}
+
 function plainBidError(error: unknown): Error {
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes("#4004")) return bidWindowClosed();
@@ -347,7 +420,7 @@ export async function submitSandboxBid(
   const bidderValue = await client.chain.simulate(TOKEN, "confidential_balance", [new Address(session.address).toScVal()]);
   const bidderAccount = parseConfidentialAccount(bidderValue);
   let spendableValue = BigInt(local.spendableValue);
-  const spendableRandomness = BigInt(local.spendableRandomness);
+  let spendableRandomness = BigInt(local.spendableRandomness);
   const reconciledSpendable = reconcilePublicDeposits(
     bidderAccount.spendableCommitment,
     spendableValue,
@@ -361,15 +434,26 @@ export async function submitSandboxBid(
     local.spendableValue = spendableValue.toString();
     saveLocal(session.address, local);
   }
-  const receivingValue = reconcilePublicDeposits(bidderAccount.receivingCommitment, 0n, 0n);
+  let receivingValue = reconcilePublicDeposits(bidderAccount.receivingCommitment, 0n, 0n);
+  let receivingRandomness = 0n;
   if (receivingValue === null) {
-    throw new Error("This wallet has a confidential incoming balance that this browser cannot open. Merge it from the wallet that created it first.");
+    const recovered = await recoverReceivingOpening(
+      session.address,
+      deriveKeys(BigInt(local.secret), addressToField(TOKEN)),
+      bidderAccount.receivingCommitment,
+    );
+    if (!recovered) {
+      throw new Error("This wallet's confidential incoming balance could not be recovered from retained Testnet events.");
+    }
+    receivingValue = recovered.value;
+    receivingRandomness = recovered.randomness;
   }
 
   // A one-stroop deposit forces merge when an older interrupted flow left funds receiving-only.
   const currentTotal = spendableValue + receivingValue;
   const depositAmount = currentTotal < DEPOSIT ? DEPOSIT - currentTotal : receivingValue > 0n ? 1n : 0n;
   spendableValue = currentTotal + depositAmount;
+  spendableRandomness = fpAdd(spendableRandomness, receivingRandomness);
 
   onProgress?.("proof");
   await configureBrowserProver();

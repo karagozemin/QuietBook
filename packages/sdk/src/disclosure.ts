@@ -2,6 +2,7 @@ import {
   DOMAIN,
   H,
   Grumpkin,
+  deriveTxBlind,
   frMod,
   pointCoords,
   poseidonWithDomain,
@@ -36,6 +37,23 @@ function currentEcdh(scalar: bigint, point: Point): bigint {
   return poseidonWithDomain(ECDH_SHARED_SECRET_DOMAIN, [x, y]);
 }
 
+export function decryptIncomingTransfer(params: {
+  holderKeys: KeyPair;
+  rE: Point;
+  sigma: bigint;
+  vTilde: bigint;
+}) {
+  const shared = currentEcdh(params.holderKeys.vk, params.rE);
+  const value = frMod(
+    params.vTilde - poseidonWithDomain(DOMAIN.TX_AMOUNT, [shared, params.sigma]),
+  );
+  if (value >= MAX_I128) throw new Error("event does not decrypt for this transfer recipient");
+  return {
+    value,
+    randomness: deriveTxBlind(shared, params.sigma),
+  };
+}
+
 function fromHex(value: string): bigint {
   return BigInt(value.startsWith("0x") ? value : `0x${value}`);
 }
@@ -68,11 +86,12 @@ export function buildSettlementDisclosureWitness(params: {
   rDisc?: bigint;
 }): SettlementDisclosureWitness {
   const { holderKeys, event, request } = params;
-  const eventShared = currentEcdh(holderKeys.vk, event.rE);
-  const amount = frMod(
-    event.vTilde - poseidonWithDomain(DOMAIN.TX_AMOUNT, [eventShared, event.sigmaA]),
-  );
-  if (amount >= MAX_I128) throw new Error("event does not decrypt for this settlement recipient");
+  const amount = decryptIncomingTransfer({
+    holderKeys,
+    rE: event.rE,
+    sigma: event.sigmaA,
+    vTilde: event.vTilde,
+  }).value;
 
   const rDiscScalar = params.rDisc ?? randomScalar();
   const rDisc = scalarMul(rDiscScalar, H);

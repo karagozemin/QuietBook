@@ -1,4 +1,4 @@
-import { Activity, ArrowLeft, ArrowUpRight, BadgeCheck, Check, Clock3, Fingerprint, Plus, Radio, RefreshCw, ShieldCheck, Timer, Users, Wallet } from "lucide-react";
+import { Activity, ArrowLeft, ArrowUpRight, BadgeCheck, Check, Clock3, Fingerprint, Plus, Radio, RefreshCw, ShieldCheck, Timer, Trophy, Users, Wallet } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { latestTestnetLedger, type WalletSession } from "./wallet";
 import { compact, explorerTransaction } from "./evidence";
@@ -106,6 +106,43 @@ function CreateRoundProgress({ stage }: { stage: CreateRoundStage }) {
 
 function BidProgress({ stage, error }: { stage: BidStage; error?: string }) {
   return <TransactionProgress stage={stage} steps={bidSteps} title="SEALING CONFIDENTIAL BID" label="Confidential bid progress" error={error}/>;
+}
+
+function SettlementResult({ round, session, hasBid, busy, onReclaim, onNewRound }: {
+  round: SandboxRound;
+  session?: WalletSession;
+  hasBid: boolean;
+  busy: boolean;
+  onReclaim: () => void;
+  onNewRound: () => void;
+}) {
+  const won = session?.address === round.winner;
+  const lost = Boolean(session && hasBid && !won);
+  const winnerLabel = won ? "Your wallet" : compact(round.winner ?? "", 7, 5);
+  return (
+    <div className={`live-result ${won ? "winner" : ""}`} role="status" aria-live="polite">
+      {won && <div className="live-result-confetti" aria-hidden="true">{Array.from({ length: 8 }, (_, index) => <i key={index}/>)}</div>}
+      <span className="live-result-mark">{won ? <Trophy size={26}/> : <BadgeCheck size={26}/>}</span>
+      <span className="section-kicker">{won ? "WINNING WALLET" : "SETTLEMENT COMPLETE"}</span>
+      <h2>{won ? "Your sealed bid won" : lost ? "Another bid won" : "Winner selected"}</h2>
+      <p>{won
+        ? "The max-bid proof selected your wallet and settlement completed atomically on Testnet."
+        : lost
+          ? "The max-bid proof selected a different wallet. Your bid value remains private and can now be reclaimed."
+          : "The max-bid proof selected the winning wallet and settlement completed atomically on Testnet."}</p>
+      <div className="live-result-facts">
+        <span><small>Winner</small><strong>{winnerLabel}</strong></span>
+        <span><small>Bids evaluated</small><strong>{round.bidders.length}</strong></span>
+        <span><small>Winning amount</small><strong>Confidential</strong></span>
+        <span><small>Max-bid proof</small><strong>{round.proof ? `${round.proof.bytes.toLocaleString()} bytes` : "Verified"}</strong></span>
+      </div>
+      <div className="live-result-actions">
+        {lost && <button type="button" className="pressable button-primary" onClick={onReclaim} disabled={busy}>{busy ? <Activity className="spin" size={16}/> : <Wallet size={16}/>} Reclaim bid</button>}
+        {session && !hasBid && <button type="button" className="pressable button-secondary" onClick={onNewRound} disabled={busy}><Plus size={16}/> Create next round</button>}
+        {round.receipts.finalize && <a className="pressable button-secondary" href={explorerTransaction(round.receipts.finalize)} target="_blank" rel="noreferrer">Settlement receipt <ArrowUpRight size={14}/></a>}
+      </div>
+    </div>
+  );
 }
 
 export function LiveSandboxPage({ session, onConnect }: {
@@ -318,7 +355,7 @@ export function LiveSandboxPage({ session, onConnect }: {
               {session && !isIssuer && !settled && !expired && !hasBid && <><h2>Submit one confidential bid</h2><div className="bid-field"><label htmlFor="live-bid">YOUR BID</label><span><input id="live-bid" inputMode="decimal" value={bid} onChange={(event) => setBid(event.target.value.replace(/[^0-9.]/g, ""))}/><b>XLM</b></span><small>8.00 minimum · 20.00 maximum</small></div><button type="button" className="pressable button-primary button-large" onClick={() => void placeBid()} disabled={action.status === "loading"}>{action.status === "loading" ? <Activity className="spin" size={17}/> : <Fingerprint size={17}/>} Prove & sign sealed bid</button></>}
               {session && !isIssuer && !settled && expired && round.bidders.length > 0 && !hasBid && <div className="live-complete expired"><Clock3 size={28}/><h2>Bid window closed</h2><p>The issuer can now close the book and settle the proven winner.</p></div>}
               {session && !isIssuer && hasBid && !settled && <div className="live-complete"><BadgeCheck size={28}/><h2>Bid sealed on Testnet</h2><p>Your value stays in this browser and the operator’s private settlement vault.</p></div>}
-              {settled && <div className="live-complete"><BadgeCheck size={28}/><h2>{session?.address === round.winner ? "Your bid won" : "Round settled"}</h2><p>The proof and atomic settlement receipt are available in the live evidence stream.</p>{session && hasBid && session.address !== round.winner && <button type="button" className="pressable button-primary" onClick={() => void reclaim()} disabled={action.status === "loading"}>{action.status === "loading" ? <Activity className="spin" size={16}/> : <Wallet size={16}/>} Reclaim bid</button>}{session && !hasBid && <button type="button" className="pressable button-secondary" onClick={beginCreate} disabled={action.status === "loading"}><Plus size={16}/> Create next round</button>}</div>}
+              {settled && <SettlementResult round={round} session={session} hasBid={hasBid} busy={action.status === "loading"} onReclaim={() => void reclaim()} onNewRound={beginCreate}/>}
               </>}
             </section>
 
@@ -326,7 +363,8 @@ export function LiveSandboxPage({ session, onConnect }: {
               <div className="live-book-head"><span>PARTICIPANTS</span><b>{round.bidders.length}/3</b></div>
               {[0, 1, 2].map((index) => {
                 const account = round.bidders[index];
-                return <div className={`live-bidder ${account ? "filled" : ""}`} key={index}><span>{account ? <Check size={14}/> : index + 1}</span><div><strong>{account ? account === session?.address ? "Your wallet" : `Investor ${String(index + 1).padStart(2, "0")}` : "Available"}</strong><small>{account ? compact(account) : "Waiting for wallet"}</small></div><b>{account ? "SEALED" : "OPEN"}</b></div>;
+                const winner = settled && account === round.winner;
+                return <div className={`live-bidder ${account ? "filled" : ""} ${winner ? "winner" : ""}`} key={index}><span>{winner ? <Trophy size={14}/> : account ? <Check size={14}/> : index + 1}</span><div><strong>{account ? account === session?.address ? "Your wallet" : `Investor ${String(index + 1).padStart(2, "0")}` : settled ? "Not filled" : "Available"}</strong><small>{account ? compact(account) : settled ? "Round settled" : "Waiting for wallet"}</small></div><b>{winner ? "WINNER" : settled && account ? "NOT SELECTED" : account ? "SEALED" : settled ? "CLOSED" : "OPEN"}</b></div>;
               })}
               <div className={`live-deadline ${expired ? "expired" : ""}`}><Timer size={15}/><span>{expired ? "Settlement unlocked" : "Settlement unlock"}<strong>{expired ? "Ready now" : unlockCountdown}</strong><small>Ledger {round.bidDeadlineLedger.toLocaleString()}</small></span></div>
             </section>

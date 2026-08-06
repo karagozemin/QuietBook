@@ -4,6 +4,7 @@ import {
   buildSetSpenderWitness,
   buildSpenderTransferWitness,
   decryptAllowanceEvent,
+  decryptIncomingTransfer,
   decryptSpenderTransferEvent,
 } from "../src/index.js";
 
@@ -73,5 +74,14 @@ assert.deepEqual(decryptSpenderTransferEvent(secret, transferEvent), {
   channelsAgree: true,
 });
 assert.equal(decryptSpenderTransferEvent(secret + 1n, transferEvent).channelsAgree, false);
+assert.deepEqual(decryptIncomingTransfer({
+  holderKeys: recipient,
+  rE: transfer.payload.rE,
+  sigma: set.delegation.sigmaA,
+  vTilde: transfer.payload.vTilde,
+}), {
+  value: 120n,
+  randomness: transfer.paymentOpening.randomness,
+});
 
 console.log("current auditor event decryption checks passed");
