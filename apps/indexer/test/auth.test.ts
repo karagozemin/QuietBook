@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { test } from "node:test";
 import { Keypair } from "@stellar/stellar-sdk";
+
 import { SandboxAuth } from "../src/auth.js";
 import { RateLimiter } from "../src/rate-limit.js";
 
@@ -22,7 +24,18 @@ test("issues a one-use wallet session and rejects tampering", () => {
   assert.throws(() => auth.authenticate(`Bearer ${session.token}`), /expired/);
 });
 
+test("accepts a Freighter signature over the sha256 hash of the message", () => {
+  const wallet = Keypair.random();
+  const auth = new SandboxAuth(secret, "https://api.quietbook.test");
+  const challenge = auth.challenge(wallet.publicKey());
+  const hashed = createHash("sha256").update(Buffer.from(challenge.message, "utf8")).digest();
+  const signature = wallet.sign(hashed).toString("base64");
+  const session = auth.verifyChallenge(wallet.publicKey(), challenge.nonce, signature);
+  assert.equal(auth.authenticate(`Bearer ${session.token}`), wallet.publicKey());
+});
+
 test("rejects a signature from a different wallet", () => {
+
   const wallet = Keypair.random();
   const attacker = Keypair.random();
   const auth = new SandboxAuth(secret, "https://api.quietbook.test");

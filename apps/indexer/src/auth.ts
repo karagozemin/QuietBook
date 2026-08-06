@@ -1,5 +1,6 @@
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { Keypair } from "@stellar/stellar-sdk";
+
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1_000;
 const SESSION_TTL_MS = 2 * 60 * 60 * 1_000;
@@ -66,10 +67,19 @@ export class SandboxAuth {
       throw new Error("Wallet authorization challenge is invalid or expired");
     }
     const signatureBytes = decodeSignature(signature);
-    if (signatureBytes.length !== 64
-      || !Keypair.fromPublicKey(account).verify(Buffer.from(challenge.message, "utf8"), signatureBytes)) {
+    // Freighter's signMessage behaviour varies by version: older builds sign the
+    // raw UTF-8 message bytes, current builds sign the SHA-256 hash of those bytes.
+    // Accept either so wallet authorization works across Freighter versions.
+    const messageBytes = Buffer.from(challenge.message, "utf8");
+    const hashedBytes = createHash("sha256").update(messageBytes).digest();
+    const keypair = Keypair.fromPublicKey(account);
+    const signatureValid = signatureBytes.length === 64
+      && (keypair.verify(messageBytes, signatureBytes)
+        || keypair.verify(hashedBytes, signatureBytes));
+    if (!signatureValid) {
       throw new Error("Wallet authorization signature is invalid");
     }
+
     const issuedAt = this.now();
     const payload: SessionPayload = {
       account,
