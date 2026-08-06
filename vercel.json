@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "pnpm --filter @ctd/sdk build && pnpm --filter @quietbook/sdk build && pnpm --filter @quietbook/web build",
-  "installCommand": "pnpm install --frozen-lockfile",
+  "installCommand": "bash scripts/vercel-install.sh",
   "outputDirectory": "apps/web/dist",
   "framework": "vite",
   "rewrites": [
