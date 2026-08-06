@@ -25,9 +25,26 @@ function encode(value: string | Buffer) {
 
 function decodeSignature(value: string) {
   const normalized = value.trim();
+  // 128 hex chars = 64-byte ed25519 signature.
   if (/^[0-9a-f]{128}$/i.test(normalized)) return Buffer.from(normalized, "hex");
+  // Comma-separated byte array, e.g. a Uint8Array stringified as "12,34,...".
+  if (/^\d{1,3}(,\d{1,3})+$/.test(normalized)) {
+    return Buffer.from(normalized.split(",").map((byte) => Number(byte)));
+  }
+  // JSON payloads: a plain number array or a serialized Node Buffer object.
+  if (normalized.startsWith("[") || normalized.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(normalized) as number[] | { type?: string; data?: number[] };
+      if (Array.isArray(parsed)) return Buffer.from(parsed);
+      if (parsed?.type === "Buffer" && Array.isArray(parsed.data)) return Buffer.from(parsed.data);
+    } catch {
+      // fall through to base64 handling below
+    }
+  }
+  // Default: base64 or base64url.
   return Buffer.from(normalized, "base64");
 }
+
 
 export class SandboxAuth {
   private readonly challenges = new Map<string, Challenge>();

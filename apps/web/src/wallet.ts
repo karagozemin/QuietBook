@@ -102,6 +102,40 @@ export function freighterSigner(session: WalletSession): BrowserSigner {
   };
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+/**
+ * Freighter's signMessage return type varies across versions and across the
+ * extension messaging boundary. It can arrive as a base64 string, a Buffer, a
+ * Uint8Array, a serialized `{ type: "Buffer", data: [...] }` object, a plain
+ * number array, or a Uint8Array serialized to `{ "0": .., "1": .. }`. Normalize
+ * all of these into a clean base64 string so the backend can verify the 64-byte
+ * ed25519 signature reliably.
+ */
+function normalizeSignedMessage(value: unknown): string {
+  if (typeof value === "string") return value; // already base64/base64url
+  if (value instanceof Uint8Array) return bytesToBase64(value);
+  if (Array.isArray(value)) return bytesToBase64(Uint8Array.from(value as number[]));
+  if (value && typeof value === "object") {
+    const record = value as { type?: string; data?: number[]; [key: string]: unknown };
+    if (record.type === "Buffer" && Array.isArray(record.data)) {
+      return bytesToBase64(Uint8Array.from(record.data));
+    }
+    // Uint8Array serialized to an index-keyed object: { "0": 12, "1": 34, ... }
+    const keys = Object.keys(record).filter((key) => /^\d+$/.test(key));
+    if (keys.length > 0) {
+      const bytes = new Uint8Array(keys.length);
+      for (const key of keys) bytes[Number(key)] = Number(record[key]);
+      return bytesToBase64(bytes);
+    }
+  }
+  throw new Error("Freighter returned an unrecognized sandbox authorization signature");
+}
+
 export async function authorizeSandboxMessage(session: WalletSession, message: string) {
   const signed = await signMessage(message, {
     address: session.address,
@@ -112,10 +146,9 @@ export async function authorizeSandboxMessage(session: WalletSession, message: s
   if (signed.signerAddress && signed.signerAddress !== session.address) {
     throw new Error("Freighter authorized the sandbox with a different account");
   }
-  return typeof signed.signedMessage === "string"
-    ? signed.signedMessage
-    : signed.signedMessage.toString("base64");
+  return normalizeSignedMessage(signed.signedMessage);
 }
+
 
 export class BrowserProductChain implements ProductChain {
   readonly server: rpc.Server;

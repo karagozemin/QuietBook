@@ -34,7 +34,38 @@ test("accepts a Freighter signature over the sha256 hash of the message", () => 
   assert.equal(auth.authenticate(`Bearer ${session.token}`), wallet.publicKey());
 });
 
+test("accepts a signature serialized as a comma-separated byte array", () => {
+  const wallet = Keypair.random();
+  const auth = new SandboxAuth(secret, "https://api.quietbook.test");
+  const challenge = auth.challenge(wallet.publicKey());
+  const raw = wallet.sign(Buffer.from(challenge.message));
+  const signature = Array.from(raw).join(",");
+  const session = auth.verifyChallenge(wallet.publicKey(), challenge.nonce, signature);
+  assert.equal(auth.authenticate(`Bearer ${session.token}`), wallet.publicKey());
+});
+
+test("accepts a signature serialized as a JSON number array", () => {
+  const wallet = Keypair.random();
+  const auth = new SandboxAuth(secret, "https://api.quietbook.test");
+  const challenge = auth.challenge(wallet.publicKey());
+  const raw = wallet.sign(Buffer.from(challenge.message));
+  const signature = JSON.stringify(Array.from(raw));
+  const session = auth.verifyChallenge(wallet.publicKey(), challenge.nonce, signature);
+  assert.equal(auth.authenticate(`Bearer ${session.token}`), wallet.publicKey());
+});
+
+test("accepts a signature serialized as a Node Buffer object", () => {
+  const wallet = Keypair.random();
+  const auth = new SandboxAuth(secret, "https://api.quietbook.test");
+  const challenge = auth.challenge(wallet.publicKey());
+  const raw = wallet.sign(Buffer.from(challenge.message));
+  const signature = JSON.stringify({ type: "Buffer", data: Array.from(raw) });
+  const session = auth.verifyChallenge(wallet.publicKey(), challenge.nonce, signature);
+  assert.equal(auth.authenticate(`Bearer ${session.token}`), wallet.publicKey());
+});
+
 test("rejects a signature from a different wallet", () => {
+
 
   const wallet = Keypair.random();
   const attacker = Keypair.random();
