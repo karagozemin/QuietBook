@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { EvidenceDatabase, type IndexedEvent } from "../src/db.js";
+import { LiveSandbox } from "../src/sandbox.js";
 
 const base = (event: Partial<IndexedEvent>): IndexedEvent => ({
   id: event.id ?? "1-0",
@@ -51,4 +52,16 @@ test("stores confidential raw event locally but returns no decoded payload", () 
   } finally {
     database.close();
   }
+});
+
+test("rejects unsafe live-round bid windows before touching Testnet", async () => {
+  const sandbox = new LiveSandbox();
+  await assert.rejects(
+    sandbox.prepareRound("not-an-address", 23),
+    /between 2 and 180 minutes/,
+  );
+  await assert.rejects(
+    sandbox.prepareRound("not-an-address", 2_161),
+    /between 2 and 180 minutes/,
+  );
 });

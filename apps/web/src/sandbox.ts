@@ -1,11 +1,13 @@
-import { Address, xdr } from "@stellar/stellar-sdk";
+import { Address, nativeToScVal, scValToNative, xdr } from "@stellar/stellar-sdk";
 import initAcvm from "@noir-lang/acvm_js";
 import acvmWasmUrl from "@noir-lang/acvm_js/web/acvm_js_bg.wasm?url";
 import initNoircAbi from "@noir-lang/noirc_abi";
 import noircAbiWasmUrl from "@noir-lang/noirc_abi/web/noirc_abi_wasm_bg.wasm?url";
 import {
   addressToField,
+  commit,
   deriveKeys,
+  pointToBytes,
   pointFromBytes,
   proverFromArtifact,
   randomScalar,
@@ -28,6 +30,7 @@ import { freighterSigner, latestTestnetLedger, productClient, type WalletSession
 const API = import.meta.env.VITE_INDEXER_URL ?? "http://127.0.0.1:8787";
 const DEPOSIT = 200_000_000n;
 const MIN_BID = 80_000_000n;
+const LEDGERS_PER_MINUTE = 12;
 const TOKEN = testnetEvidence.deployment.contracts.confidentialToken.contractId;
 const LIVE_MARKET = testnetEvidence.deployment.liveMarket.contractId;
 
@@ -36,6 +39,9 @@ type LocalDelegation = {
   randomness: string;
   dvk: string;
   sigmaA: string;
+  nextSpendableValue?: string;
+  nextSpendableRandomness?: string;
+  transaction?: string;
 };
 type LocalConfidentialState = {
   secret: string;
@@ -76,7 +82,7 @@ type PreparedRound = {
 
 export type CreateRoundStage = "account" | "controller" | "approval" | "confirmation" | "activation";
 type CreateRoundProgress = (stage: CreateRoundStage) => void;
-export type BidStage = "validation" | "account" | "proof" | "approval" | "confirmation" | "evidence";
+export type BidStage = "validation" | "account" | "access" | "balance" | "proof" | "transaction" | "approval" | "confirmation" | "evidence";
 type BidProgress = (stage: BidStage) => void;
 
 let proverLoaderConfigured = false;
@@ -177,11 +183,18 @@ export async function initializeConfidentialAccount(session: WalletSession, requ
   }
 }
 
-export async function createSandboxRound(session: WalletSession, onProgress?: CreateRoundProgress) {
+export async function createSandboxRound(
+  session: WalletSession,
+  bidWindowMinutes: number,
+  onProgress?: CreateRoundProgress,
+) {
   onProgress?.("account");
   await initializeConfidentialAccount(session, false);
   onProgress?.("controller");
-  const prepared = await api<PreparedRound>("/api/sandbox/prepare", { issuer: session.address });
+  const prepared = await api<PreparedRound>("/api/sandbox/prepare", {
+    issuer: session.address,
+    bidWindowLedgers: bidWindowMinutes * LEDGERS_PER_MINUTE,
+  });
   const client = productClient(LIVE_MARKET);
   const walletSigner = freighterSigner(session);
   const signer = {
@@ -217,6 +230,44 @@ function bidWindowClosed(): Error {
   return new Error("This bid window has closed. No bid transaction was submitted. Open the next issuance to continue.");
 }
 
+function bytesEqual(left: Uint8Array, right: Uint8Array) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function opensCommitment(commitment: Uint8Array, value: bigint, randomness: bigint) {
+  return bytesEqual(pointToBytes(commit(value, randomness)), commitment);
+}
+
+/** Recover public deposits left behind by an older interrupted, non-atomic flow. */
+function reconcilePublicDeposits(commitment: Uint8Array, value: bigint, randomness: bigint) {
+  for (let deposits = 0n; deposits <= 10n; deposits += 1n) {
+    const candidate = value + (deposits * DEPOSIT);
+    if (opensCommitment(commitment, candidate, randomness)) return candidate;
+  }
+  return null;
+}
+
+function plainBidError(error: unknown): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes("#4004")) return bidWindowClosed();
+  if (message.includes("#4006")) return new Error("This wallet could not pass the round allowlist. Retry the access check.");
+  if (message.includes("#4009")) return new Error("This wallet's bid is already registered on Testnet. Refresh the live round.");
+  if (message.includes("#4014")) return new Error("This round already has three bids. No wallet transaction was submitted.");
+  if (message.includes("#3503")) return new Error("This wallet already has an active confidential delegation. Retry to resume it instead of creating another one.");
+  if (message.includes("#3506")) return new Error("The private balance proof did not match the wallet's current Testnet state. No transaction was submitted.");
+  if (/insufficient balance|underfunded/i.test(message)) return new Error("This Testnet wallet needs enough XLM for the 20 XLM confidential deposit and network fee.");
+  return error instanceof Error ? error : new Error("The bid could not be prepared before wallet approval");
+}
+
+function bidOpening(delegation: LocalDelegation) {
+  return {
+    value: delegation.value,
+    randomness: delegation.randomness,
+    dvk: delegation.dvk,
+    sigmaA: delegation.sigmaA,
+  };
+}
+
 export async function submitSandboxBid(
   session: WalletSession,
   round: SandboxRound,
@@ -230,15 +281,97 @@ export async function submitSandboxBid(
   await initializeConfidentialAccount(session);
   const local = loadLocal(session.address);
   if (!local) throw new Error("Confidential state is unavailable in this browser");
-  onProgress?.("proof");
+  onProgress?.("access");
   await api<{ transaction: string }>("/api/sandbox/allowlist", { roundId: round.roundId, account: session.address });
 
   const client = productClient(round.market);
-  let spendableValue = BigInt(local.spendableValue);
-  let spendableRandomness = BigInt(local.spendableRandomness);
-  const depositAmount = spendableValue < DEPOSIT ? DEPOSIT - spendableValue : 0n;
-  spendableValue += depositAmount;
+  onProgress?.("balance");
+  const activeDelegation = scValToNative(await client.chain.simulate(TOKEN, "is_spender", [
+    new Address(session.address).toScVal(),
+    new Address(round.controller).toScVal(),
+  ])) === true;
+  const savedDelegation = local.delegations[round.roundId];
+  if (activeDelegation) {
+    if (!savedDelegation) {
+      throw new Error("An active delegation exists for this round, but its private opening is not available in this browser.");
+    }
+    if (savedDelegation.nextSpendableValue && savedDelegation.nextSpendableRandomness) {
+      local.spendableValue = savedDelegation.nextSpendableValue;
+      local.spendableRandomness = savedDelegation.nextSpendableRandomness;
+      saveLocal(session.address, local);
+    }
+    const roundBytes = nativeToScVal(Uint8Array.from(
+      round.roundId.match(/.{2}/g) ?? [],
+      (byte) => Number.parseInt(byte, 16),
+    ), { type: "bytes" });
+    const chainBidders = scValToNative(await client.chain.simulate(round.market, "get_bidders", [roundBytes])) as string[];
+    let transaction = savedDelegation.transaction ?? "";
+    if (!chainBidders.includes(session.address)) {
+      onProgress?.("transaction");
+      const walletSigner = freighterSigner(session);
+      const signer = {
+        publicKey: walletSigner.publicKey,
+        async sign(txXdrBase64: string) {
+          onProgress?.("approval");
+          const signed = await walletSigner.sign(txXdrBase64);
+          onProgress?.("confirmation");
+          return signed;
+        },
+      };
+      transaction = (await client.chain.invoke(
+        round.market,
+        "register_bid",
+        [roundBytes, new Address(session.address).toScVal()],
+        signer,
+      )).hash;
+      savedDelegation.transaction = transaction;
+      saveLocal(session.address, local);
+    }
+    onProgress?.("evidence");
+    await api("/api/sandbox/bids", {
+      roundId: round.roundId,
+      opening: {
+        account: session.address,
+        ...bidOpening(savedDelegation),
+        delegationTransaction: transaction,
+        registrationTransaction: transaction,
+      },
+    });
+    return { bidTransaction: transaction, registrationTransaction: transaction };
+  }
+  if (savedDelegation) {
+    delete local.delegations[round.roundId];
+    saveLocal(session.address, local);
+  }
 
+  const bidderValue = await client.chain.simulate(TOKEN, "confidential_balance", [new Address(session.address).toScVal()]);
+  const bidderAccount = parseConfidentialAccount(bidderValue);
+  let spendableValue = BigInt(local.spendableValue);
+  const spendableRandomness = BigInt(local.spendableRandomness);
+  const reconciledSpendable = reconcilePublicDeposits(
+    bidderAccount.spendableCommitment,
+    spendableValue,
+    spendableRandomness,
+  );
+  if (reconciledSpendable === null) {
+    throw new Error("This wallet's private balance changed during an earlier attempt and cannot be opened by this browser. Use a fresh Testnet wallet for this round.");
+  }
+  if (reconciledSpendable !== spendableValue) {
+    spendableValue = reconciledSpendable;
+    local.spendableValue = spendableValue.toString();
+    saveLocal(session.address, local);
+  }
+  const receivingValue = reconcilePublicDeposits(bidderAccount.receivingCommitment, 0n, 0n);
+  if (receivingValue === null) {
+    throw new Error("This wallet has a confidential incoming balance that this browser cannot open. Merge it from the wallet that created it first.");
+  }
+
+  // A one-stroop deposit forces merge when an older interrupted flow left funds receiving-only.
+  const currentTotal = spendableValue + receivingValue;
+  const depositAmount = currentTotal < DEPOSIT ? DEPOSIT - currentTotal : receivingValue > 0n ? 1n : 0n;
+  spendableValue = currentTotal + depositAmount;
+
+  onProgress?.("proof");
   await configureBrowserProver();
   const accountValue = await client.chain.simulate(TOKEN, "confidential_balance", [new Address(round.controller).toScVal()]);
   const controllerAccount = parseConfidentialAccount(accountValue);
@@ -269,8 +402,19 @@ export async function submitSandboxBid(
         return signed;
       },
     };
+    const pendingDelegation: LocalDelegation = {
+      value: witness.delegation.value.toString(),
+      randomness: witness.delegation.randomness.toString(),
+      dvk: witness.delegation.dvk.toString(),
+      sigmaA: witness.delegation.sigmaA.toString(),
+      nextSpendableValue: witness.nextSpendable.value.toString(),
+      nextSpendableRandomness: witness.nextSpendable.randomness.toString(),
+    };
+    local.delegations[round.roundId] = pendingDelegation;
+    saveLocal(session.address, local);
     let submitted;
     try {
+      onProgress?.("transaction");
       submitted = await client.submitAtomicBid({
         roundId: round.roundId,
         bidder: session.address,
@@ -281,24 +425,18 @@ export async function submitSandboxBid(
         proof: generated.proof,
       }, signer);
     } catch (error) {
-      if (error instanceof Error && error.message.includes("#4004")) throw bidWindowClosed();
-      throw error;
+      throw plainBidError(error);
     }
     local.spendableValue = witness.nextSpendable.value.toString();
     local.spendableRandomness = witness.nextSpendable.randomness.toString();
-    local.delegations[round.roundId] = {
-      value: witness.delegation.value.toString(),
-      randomness: witness.delegation.randomness.toString(),
-      dvk: witness.delegation.dvk.toString(),
-      sigmaA: witness.delegation.sigmaA.toString(),
-    };
+    pendingDelegation.transaction = submitted.hash;
     saveLocal(session.address, local);
     onProgress?.("evidence");
     await api("/api/sandbox/bids", {
       roundId: round.roundId,
       opening: {
         account: session.address,
-        ...local.delegations[round.roundId],
+        ...bidOpening(pendingDelegation),
         delegationTransaction: submitted.hash,
         registrationTransaction: submitted.hash,
       },

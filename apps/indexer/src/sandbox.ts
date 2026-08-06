@@ -63,7 +63,9 @@ const transferArtifact = JSON.parse(readFileSync(join(root, "packages/sdk/circui
 const maxBidArtifact = JSON.parse(readFileSync(join(root, "packages/sdk/circuits/max_bid.json"), "utf8"));
 const RESERVE = 80_000_000n;
 const RWA_LOT = 10_000_000n;
-const BID_WINDOW_LEDGERS = 720;
+const DEFAULT_BID_WINDOW_LEDGERS = 720;
+const MIN_BID_WINDOW_LEDGERS = 24;
+const MAX_BID_WINDOW_LEDGERS = 2_160;
 const SETTLEMENT_WINDOW_LEDGERS = 180;
 const LEGACY_MARKET = deployment.contracts.market.contractId;
 const LIVE_MARKET = deployment.liveMarket.contractId;
@@ -78,9 +80,15 @@ function saveState(state: SandboxState) {
 }
 
 function stellar(args: string[]) {
-  const result = spawnSync("stellar", args, { encoding: "utf8" });
+  const stellarBin = existsSync("/opt/homebrew/bin/stellar")
+    ? "/opt/homebrew/bin/stellar"
+    : "stellar";
+  const result = spawnSync(stellarBin, args, { encoding: "utf8" });
   const combined = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
-  if (result.status !== 0) throw new Error("Controller deployment failed on Testnet");
+  if (result.status !== 0) {
+    const detail = result.error?.message ?? combined.trim().replace(/\s+/g, " ").slice(-600);
+    throw new Error(`Controller deployment failed on Testnet${detail ? `: ${detail}` : ""}`);
+  }
   return {
     stdout: result.stdout.trim(),
     hashes: [...combined.matchAll(/\/tx\/([0-9a-f]{64})/g)].map((match) => match[1]!),
@@ -142,15 +150,20 @@ export class LiveSandbox {
     return next;
   }
 
-  prepareRound(issuer: string) {
+  prepareRound(issuer: string, bidWindowLedgers = DEFAULT_BID_WINDOW_LEDGERS) {
     return this.exclusive(async () => {
+      if (!Number.isInteger(bidWindowLedgers)
+        || bidWindowLedgers < MIN_BID_WINDOW_LEDGERS
+        || bidWindowLedgers > MAX_BID_WINDOW_LEDGERS) {
+        throw new Error("Bid window must be between 2 and 180 minutes");
+      }
       new Address(issuer);
       const chain = client();
       if (!(await chain.isRegistered(issuer))) {
         throw new Error("Initialize the issuer confidential account first");
       }
       const latestLedger = await chain.latestLedger();
-      const bidDeadlineLedger = latestLedger + BID_WINDOW_LEDGERS;
+      const bidDeadlineLedger = latestLedger + bidWindowLedgers;
       const settlementDeadlineLedger = bidDeadlineLedger + SETTLEMENT_WINDOW_LEDGERS;
       const deployed = stellar([
         "contract", "deploy", "--wasm", controllerWasm,

@@ -1,5 +1,19 @@
 import { expect, test } from "@playwright/test";
 
+const sandboxRound = (roundId: string, issuer: string, bidders: string[] = []) => ({
+  roundId,
+  market: "C".padEnd(56, "A"),
+  issuer,
+  controller: "C".padEnd(56, "B"),
+  bidDeadlineLedger: 9_000_000,
+  settlementDeadlineLedger: 9_000_180,
+  createdAt: "2026-08-06T00:00:00.000Z",
+  bidders,
+  receipts: {},
+  winner: null,
+  proof: null,
+});
+
 test("landing, intro and verified Testnet story remain usable", async ({ page }) => {
   const browserErrors: string[] = [];
   page.on("console", (message) => {
@@ -73,4 +87,22 @@ test("live story fails honestly when public RPC is unavailable", async ({ page }
   await page.getByRole("button", { name: "Verify completed round" }).click();
   await expect(page.getByText("Live infrastructure did not answer", { exact: true })).toBeVisible({ timeout: 14_000 });
   await expect(page.getByText("TESTNET_RPC_UNAVAILABLE", { exact: true })).toBeVisible();
+});
+
+test("concurrent live rounds stay in the directory until one is selected", async ({ page }) => {
+  const first = sandboxRound("a".repeat(64), "G".padEnd(56, "A"), ["G".padEnd(56, "C")]);
+  const second = sandboxRound("b".repeat(64), "G".padEnd(56, "B"));
+  await page.route("http://127.0.0.1:8787/api/sandbox/rounds", (route) => route.fulfill({ json: { rounds: [first, second] } }));
+
+  await page.goto("/");
+  await page.getByRole("button", { name: /Explore live round/ }).click();
+  await expect(page.getByRole("heading", { name: "Choose an issuance" })).toBeVisible();
+  await expect(page.getByText("2 live", { exact: true })).toBeVisible();
+  await expect(page.getByText(/SELECTED ROUND/)).toHaveCount(0);
+
+  await page.getByRole("button", { name: /Open round aaaaaa/ }).click();
+  await expect(page.getByText(/SELECTED ROUND/)).toBeVisible();
+  await expect(page.getByText("Settlement unlock", { exact: true }).first()).toBeVisible();
+  await page.getByRole("button", { name: "All active rounds" }).click();
+  await expect(page.getByRole("heading", { name: "Choose an issuance" })).toBeVisible();
 });

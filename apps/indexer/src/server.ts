@@ -57,7 +57,10 @@ const server = createServer(async (request, response) => {
     if (request.method === "POST" && url.pathname.startsWith("/api/sandbox/")) {
       const input = await body(request);
       if (url.pathname === "/api/sandbox/prepare") {
-        return json(response, 200, await sandbox.prepareRound(String(input.issuer ?? "")));
+        const bidWindowLedgers = input.bidWindowLedgers === undefined
+          ? undefined
+          : Number(input.bidWindowLedgers);
+        return json(response, 200, await sandbox.prepareRound(String(input.issuer ?? ""), bidWindowLedgers));
       }
       if (url.pathname === "/api/sandbox/activate") {
         const result = sandbox.activate({
