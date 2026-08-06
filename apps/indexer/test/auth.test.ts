@@ -34,6 +34,20 @@ test("accepts a Freighter signature over the sha256 hash of the message", () => 
   assert.equal(auth.authenticate(`Bearer ${session.token}`), wallet.publicKey());
 });
 
+test("accepts a SEP-0053 Freighter signature (Stellar Signed Message prefix + sha256)", () => {
+  const wallet = Keypair.random();
+  const auth = new SandboxAuth(secret, "https://api.quietbook.test");
+  const challenge = auth.challenge(wallet.publicKey());
+  const prefixed = Buffer.concat([
+    Buffer.from("Stellar Signed Message:\n", "utf8"),
+    Buffer.from(challenge.message, "utf8"),
+  ]);
+  const hashed = createHash("sha256").update(prefixed).digest();
+  const signature = wallet.sign(hashed).toString("base64");
+  const session = auth.verifyChallenge(wallet.publicKey(), challenge.nonce, signature);
+  assert.equal(auth.authenticate(`Bearer ${session.token}`), wallet.publicKey());
+});
+
 test("accepts a signature serialized as a comma-separated byte array", () => {
   const wallet = Keypair.random();
   const auth = new SandboxAuth(secret, "https://api.quietbook.test");
