@@ -8,14 +8,18 @@ import {
   commit,
   cursorLedger,
   deriveKeys,
+  deriveSpendR,
+  DOMAIN,
   fpAdd,
   frMod,
   fromBytesBE,
+  poseidonWithDomain,
   pointToBytes,
   pointFromBytes,
   proverFromArtifact,
   setUltraHonkBackendLoader,
 } from "@ctd/sdk";
+
 import {
   buildAccountBoundRegisterWitness,
   buildRevokeSpenderWitness,
@@ -412,14 +416,26 @@ async function recoverReceivingOpening(
  * Reconstruct this account's spendable opening from retained Testnet events.
  *
  * A second browser rebuilds its local state with a zeroed spendable opening
- * (see {@link recoverLocalState}). If the account previously merged incoming
- * funds or delegated a spender, the on-chain spendable commitment carries a
- * non-zero randomness that {@link reconcilePublicDeposits} cannot reproduce,
- * so we replay the account's public event history instead.
+ * (see {@link recoverLocalState}). Whenever the account has spent, delegated,
+ * or merged, the on-chain spendable commitment carries a value/randomness that
+ * {@link reconcilePublicDeposits} cannot reproduce, so we replay the account's
+ * public event history instead.
  *
- * The reconstruction mirrors {@link recoverReceivingOpening}: deposits and
- * incoming transfers accumulate into a pending receiving opening, and every
- * `merge` for the account folds that pending opening into the spendable one.
+ * The replay mirrors the canonical `StateEngine.apply` reconstruction rules
+ * exactly, so every account — including one that has already spent — recovers
+ * the same opening the engine would:
+ *   - deposit(_, me)      → credit a pending receiving opening (r = 0).
+ *   - transfer(other, me) → ECDH-decrypt (v_tx, r_tx); credit receiving.
+ *   - merge(me)           → fold the pending receiving opening into spendable.
+ *   - withdraw(me, _)     → SET spendable = open(b_tilde, sigma).
+ *   - transfer(me, _)     → SET spendable = open(b_tilde, sigma).
+ *
+ * The two SET rules are the correction over the previous credit-only replay:
+ * `withdraw`/outgoing-`transfer` overwrite the spendable opening rather than
+ * add to it, so an account that had already spent (or self-transferred) used
+ * to be irrecoverable. `open(b_tilde, sigma)` reads the resulting spendable
+ * value straight from the event, matching {@link StateEngine.openSpendable}.
+ *
  * The result is only returned when it actually opens the supplied commitment,
  * so a partial or divergent history can never yield an incorrect opening — it
  * degrades safely to `null`.
@@ -437,6 +453,14 @@ async function recoverSpendableOpening(
   let pendingValue = 0n;
   let pendingRandomness = 0n;
 
+  // Recover the owner's post-op spendable opening from an event's emitted
+  // b_tilde, identical to StateEngine.openSpendable:
+  //   v = b_tilde - Poseidon2(ENC_BAL, [vk, sigma]);  r = deriveSpendR(vk, sigma).
+  const openSpendable = (bTilde: bigint, sigma: bigint) => ({
+    value: frMod(bTilde - poseidonWithDomain(DOMAIN.ENCRYPTED_BALANCE, [holderKeys.vk, sigma])),
+    randomness: deriveSpendR(holderKeys.vk, sigma),
+  });
+
   for (;;) {
     const filters = [{ type: "contract" as const, contractIds: [TOKEN] }];
     const response = await server.getEvents(cursor
@@ -445,6 +469,7 @@ async function recoverSpendableOpening(
 
     for (const event of response.events) {
       const name = event.topic[0]?.sym().toString();
+      // merge(me): fold the pending receiving opening into spendable.
       if (name === "merge" && topicAddress(event, 1) === account) {
         spendableValue += pendingValue;
         spendableRandomness = fpAdd(spendableRandomness, pendingRandomness);
@@ -452,10 +477,34 @@ async function recoverSpendableOpening(
         pendingRandomness = 0n;
         continue;
       }
+      // deposit(_, me): credit receiving (deposits carry r = 0).
       if (name === "deposit" && topicAddress(event, 2) === account) {
         pendingValue += BigInt(scValToNative(requiredEventField(eventFields(event), "amount")));
         continue;
       }
+      // withdraw(me, _): SET spendable from the event's b_tilde.
+      if (name === "withdraw" && topicAddress(event, 1) === account) {
+        const fields = eventFields(event);
+        const opened = openSpendable(
+          fromBytesBE(new Uint8Array(requiredEventField(fields, "b_tilde").bytes())),
+          fromBytesBE(new Uint8Array(requiredEventField(fields, "sigma", "sigma_a").bytes())),
+        );
+        spendableValue = opened.value;
+        spendableRandomness = opened.randomness;
+        continue;
+      }
+      // transfer(me, _): SET spendable from the event's b_tilde. A self-transfer
+      // (to == me too) also credits receiving below, matching the engine's order.
+      if (name === "transfer" && topicAddress(event, 1) === account) {
+        const fields = eventFields(event);
+        const opened = openSpendable(
+          fromBytesBE(new Uint8Array(requiredEventField(fields, "b_tilde").bytes())),
+          fromBytesBE(new Uint8Array(requiredEventField(fields, "sigma", "sigma_a").bytes())),
+        );
+        spendableValue = opened.value;
+        spendableRandomness = opened.randomness;
+      }
+      // transfer(other, me) / spender_transfer(..., me): credit receiving.
       const isTransfer = name === "transfer" && topicAddress(event, 2) === account;
       const isSpenderTransfer = name === "spender_transfer" && topicAddress(event, 3) === account;
       if (!isTransfer && !isSpenderTransfer) continue;
@@ -479,6 +528,7 @@ async function recoverSpendableOpening(
     ? { value: spendableValue, randomness: spendableRandomness }
     : null;
 }
+
 
 function plainBidError(error: unknown): Error {
 
