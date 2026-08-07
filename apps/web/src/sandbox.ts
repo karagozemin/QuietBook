@@ -334,6 +334,32 @@ function opensCommitment(commitment: Uint8Array, value: bigint, randomness: bigi
   return bytesEqual(pointToBytes(commit(value, randomness)), commitment);
 }
 
+/**
+ * Decrypt an incoming transfer/spender_transfer, tolerating events that target
+ * this account by address but do not decrypt for the holder's *current* keys.
+ *
+ * {@link decryptIncomingTransfer} throws when the recovered amount is out of
+ * range, which legitimately happens when replaying history that spans a
+ * confidential key/seed epoch (a re-derived client sees older ciphertexts it
+ * can no longer open). During event replay that throw would abort the whole
+ * loop before reaching the {@link opensCommitment} guard, stranding sync/live
+ * bid recovery. Returning `null` here lets the caller skip the event; the final
+ * commitment check still rejects any incorrect reconstruction, so this only
+ * widens what we can recover — never what we accept.
+ */
+function tryDecryptIncoming(
+  params: Parameters<typeof decryptIncomingTransfer>[0],
+): ReturnType<typeof decryptIncomingTransfer> | null {
+  try {
+    return decryptIncomingTransfer(params);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("does not decrypt")) return null;
+    throw error;
+  }
+}
+
+
 /** Recover public deposits left behind by an older interrupted, non-atomic flow. */
 function reconcilePublicDeposits(commitment: Uint8Array, value: bigint, randomness: bigint) {
   for (let deposits = 0n; deposits <= 10n; deposits += 1n) {
@@ -392,15 +418,19 @@ async function recoverReceivingOpening(
       const isSpenderTransfer = name === "spender_transfer" && topicAddress(event, 3) === account;
       if (!isTransfer && !isSpenderTransfer) continue;
       const fields = eventFields(event);
-      const opening = decryptIncomingTransfer({
+      const opening = tryDecryptIncoming({
         holderKeys,
         rE: pointFromBytes(new Uint8Array(requiredEventField(fields, "r_e", "r_e_point").bytes())),
         sigma: fromBytesBE(new Uint8Array(requiredEventField(fields, "sigma", "sigma_a").bytes())),
         vTilde: fromBytesBE(new Uint8Array(requiredEventField(fields, "v_tilde").bytes())),
       });
+      // An event that targets this account by address but predates the current
+      // confidential key epoch cannot be opened; skip it rather than aborting.
+      if (!opening) continue;
       value += opening.value;
       randomness = fpAdd(randomness, opening.randomness);
     }
+
 
     const previous = cursor;
     cursor = response.cursor;
@@ -529,15 +559,19 @@ async function recoverSpendableOpening(
       const isSpenderTransfer = name === "spender_transfer" && topicAddress(event, 3) === account;
       if (!isTransfer && !isSpenderTransfer) continue;
       const fields = eventFields(event);
-      const opening = decryptIncomingTransfer({
+      const opening = tryDecryptIncoming({
         holderKeys,
         rE: pointFromBytes(new Uint8Array(requiredEventField(fields, "r_e", "r_e_point").bytes())),
         sigma: fromBytesBE(new Uint8Array(requiredEventField(fields, "sigma", "sigma_a").bytes())),
         vTilde: fromBytesBE(new Uint8Array(requiredEventField(fields, "v_tilde").bytes())),
       });
+      // Skip an incoming event this key epoch can no longer open rather than
+      // aborting the replay; the final commitment check still guards the result.
+      if (!opening) continue;
       pendingValue += opening.value;
       pendingRandomness = fpAdd(pendingRandomness, opening.randomness);
     }
+
 
     const previous = cursor;
     cursor = response.cursor;
