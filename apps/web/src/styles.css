@@ -440,7 +440,9 @@ code { font-family: "DM Mono", ui-monospace, monospace; }
 .live-create-summary strong { font-size: 12px; }
 .live-create-summary small { grid-column: 1 / -1; color: var(--muted); font-size: 10px; }
 .live-round-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.live-history { margin-top: 34px; padding-top: 24px; border-top: 1px solid var(--line); }
 .live-round-card { min-width: 0; min-height: 190px; padding: 20px; display: grid; align-content: space-between; gap: 20px; color: var(--ink); text-align: left; background: var(--paper); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease; }
+.live-round-card.settled { opacity: .72; background: var(--paper); }
 .live-round-card:hover { transform: translateY(-2px); border-color: var(--green); box-shadow: 0 8px 24px rgba(14,38,25,.08); }
 .live-round-card-top, .live-round-card-main { display: grid; }
 .live-round-card-top { grid-template-columns: 1fr auto; align-items: center; gap: 12px; }

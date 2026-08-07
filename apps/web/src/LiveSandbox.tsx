@@ -204,9 +204,8 @@ export function LiveSandboxPage({ session, onConnect }: {
     else sessionStorage.removeItem(SELECTED_ROUND_KEY);
   }, [selectedRoundId]);
 
-  const activeRounds = useMemo(() => rounds.filter((item) => (
-    !item.winner && (latestLedger === null || latestLedger <= item.settlementDeadlineLedger)
-  )), [latestLedger, rounds]);
+  const activeRounds = useMemo(() => rounds.filter((item) => !item.winner), [rounds]);
+  const settledRounds = useMemo(() => rounds.filter((item) => Boolean(item.winner)).slice(0, 8), [rounds]);
   const availableRounds = useMemo(() => {
     const relatedRounds = session
       ? rounds.filter((item) => item.issuer === session.address || item.bidders.includes(session.address))
@@ -373,6 +372,7 @@ export function LiveSandboxPage({ session, onConnect }: {
               <span className="live-round-card-meta"><span><Users size={14}/>{item.bidders.length}/3 bids</span><span><ShieldCheck size={14}/>{compact(item.issuer)}</span><ArrowUpRight size={16}/></span>
             </button>;
           })}</div> : !showCreate && <section className="live-empty"><span className="live-empty-icon"><Plus size={26}/></span><div><span className="section-kicker">NO ACTIVE ROUNDS</span><h2>Open the first issuance</h2><p>Choose a bid window and publish a new isolated Testnet round.</p></div><button type="button" className="pressable button-primary button-large" onClick={beginCreate}>{session ? <Plus size={17}/> : <Wallet size={17}/>} {session ? "New issuance" : "Connect issuer wallet"}</button></section>}
+          {settledRounds.length > 0 && <section className="live-history"><div className="live-directory-head"><div><span className="section-kicker">SETTLED HISTORY</span><h2>Completed rounds</h2></div><span>{settledRounds.length} archived</span></div><div className="live-round-grid">{settledRounds.map((item) => <button type="button" className="live-round-card settled" key={item.roundId} onClick={() => selectRound(item.roundId)} aria-label={`Open settled round ${compact(item.roundId, 6, 4)}`}><span className="live-round-card-top"><b>SETTLED</b><code>QB / {compact(item.roundId, 6, 4)}</code></span><span className="live-round-card-main"><strong>Round complete</strong><small>{item.winner ? `Winner ${compact(item.winner)}` : "Settlement recorded"}</small></span><span className="live-round-card-meta"><span><Users size={14}/>{item.bidders.length}/3 bids</span><span><BadgeCheck size={14}/>Finalized</span><ArrowUpRight size={16}/></span></button>)}</div></section>}
         </section>
       ) : (
         <>
