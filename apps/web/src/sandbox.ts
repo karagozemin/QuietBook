@@ -723,6 +723,8 @@ export async function submitSandboxBid(
   const bidderAccount = parseConfidentialAccount(bidderValue);
   let spendableValue = BigInt(local.spendableValue);
   let spendableRandomness = BigInt(local.spendableRandomness);
+  let ownerKeys = deriveKeys(BigInt(local.secret), addressToField(TOKEN));
+  let recoveryKeys = ownerKeys;
   const reconciledSpendable = reconcilePublicDeposits(
     bidderAccount.spendableCommitment,
     spendableValue,
@@ -733,13 +735,22 @@ export async function submitSandboxBid(
     // typically a second browser whose zeroed state predates an earlier merge
     // or delegation. Rebuild the full opening (value + randomness) from the
     // account's retained Testnet events before giving up.
-    const recovered = await recoverSpendableOpening(
-      session,
-      deriveKeys(BigInt(local.secret), addressToField(TOKEN)),
-      bidderAccount.spendableCommitment,
-    );
+    const candidateSecrets = [BigInt(local.secret)];
+    const deterministicSecret = await deriveConfidentialSecret(session);
+    if (!candidateSecrets.includes(deterministicSecret)) candidateSecrets.push(deterministicSecret);
+    let recovered: Awaited<ReturnType<typeof recoverSpendableOpening>> = null;
+    for (const candidateSecret of candidateSecrets) {
+      const candidateKeys = deriveKeys(candidateSecret, addressToField(TOKEN));
+      recovered = await recoverSpendableOpening(session, candidateKeys, bidderAccount.spendableCommitment);
+      if (recovered) {
+        recoveryKeys = ownerKeys = candidateKeys;
+        const normalizedSecret = `0x${candidateSecret.toString(16).padStart(64, "0")}`;
+        if (local.secret !== normalizedSecret) local.secret = normalizedSecret;
+        break;
+      }
+    }
     if (!recovered) {
-      throw new Error("This wallet's private balance changed during an earlier attempt and cannot be opened by this browser. Use a fresh Testnet wallet for this round.");
+      throw new Error("This wallet's confidential balance was created with a different key and cannot be opened in this browser. Continue from the original browser that created the confidential account, or use a fresh Testnet wallet.");
     }
     spendableValue = recovered.value;
     spendableRandomness = recovered.randomness;
@@ -755,13 +766,23 @@ export async function submitSandboxBid(
   let receivingValue = reconcilePublicDeposits(bidderAccount.receivingCommitment, 0n, 0n);
   let receivingRandomness = 0n;
   if (receivingValue === null) {
-    const recovered = await recoverReceivingOpening(
-      session,
-      deriveKeys(BigInt(local.secret), addressToField(TOKEN)),
-      bidderAccount.receivingCommitment,
-    );
+    const candidateKeys = [recoveryKeys];
+    const deterministicSecret = await deriveConfidentialSecret(session);
+    const deterministicKeys = deriveKeys(deterministicSecret, addressToField(TOKEN));
+    if (!candidateKeys.some((keys) => keys.sk === deterministicKeys.sk)) candidateKeys.push(deterministicKeys);
+    let recovered: Awaited<ReturnType<typeof recoverReceivingOpening>> = null;
+    for (const candidate of candidateKeys) {
+      recovered = await recoverReceivingOpening(session, candidate, bidderAccount.receivingCommitment);
+      if (recovered) {
+        recoveryKeys = ownerKeys = candidate;
+        if (candidate === deterministicKeys) {
+          local.secret = `0x${deterministicSecret.toString(16).padStart(64, "0")}`;
+        }
+        break;
+      }
+    }
     if (!recovered) {
-      throw new Error("This wallet's confidential incoming balance could not be recovered from retained Testnet events.");
+      throw new Error("This wallet's confidential incoming balance was created with a different key and cannot be opened in this browser. Continue from the original browser that created the confidential account, or use a fresh Testnet wallet.");
     }
     receivingValue = recovered.value;
     receivingRandomness = recovered.randomness;
@@ -777,7 +798,6 @@ export async function submitSandboxBid(
   await configureBrowserProver();
   const accountValue = await client.chain.simulate(TOKEN, "confidential_balance", [new Address(round.controller).toScVal()]);
   const controllerAccount = parseConfidentialAccount(accountValue);
-  const ownerKeys = deriveKeys(BigInt(local.secret), addressToField(TOKEN));
   const placeholder = deriveKeys(1n, addressToField(TOKEN));
   const spenderKeys = { ...placeholder, Y: pointFromBytes(controllerAccount.spendingPublicKey) };
   const auditorKey = deploymentAuditorKey();
