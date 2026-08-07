@@ -426,17 +426,21 @@ async function recoverReceivingOpening(
  * the same opening the engine would:
  *   - deposit(_, me)      → credit a pending receiving opening (r = 0).
  *   - transfer(other, me) → ECDH-decrypt (v_tx, r_tx); credit receiving.
- *   - merge(me)           → fold the pending receiving opening into spendable.
- *   - withdraw(me, _)     → SET spendable = open(b_tilde, sigma).
- *   - transfer(me, _)     → SET spendable = open(b_tilde, sigma).
+ *   - merge(me)               → fold the pending receiving opening into spendable.
+ *   - withdraw(me, _)         → SET spendable = open(b_tilde, sigma).
+ *   - transfer(me, _)         → SET spendable = open(b_tilde, sigma).
+ *   - set_spender(me, _)      → SET spendable = open(b_tilde, sigma).
+ *   - revoke_spender(me, _)   → SET spendable = open(b_tilde, sigma).
  *
- * The two SET rules are the correction over the previous credit-only replay:
- * `withdraw`/outgoing-`transfer` overwrite the spendable opening rather than
- * add to it, so an account that had already spent (or self-transferred) used
- * to be irrecoverable. `open(b_tilde, sigma)` reads the resulting spendable
- * value straight from the event, matching {@link StateEngine.openSpendable}.
+ * The four SET rules are the correction over the previous credit-only replay:
+ * `withdraw`, outgoing `transfer`, and both delegation ops (`set_spender` /
+ * `revoke_spender`) overwrite the spendable opening rather than add to it, so an
+ * account that had already spent or delegated (i.e. placed a bid) used to be
+ * irrecoverable. `open(b_tilde, sigma)` reads the resulting spendable value
+ * straight from the event, matching {@link StateEngine.openSpendable}.
  *
  * The result is only returned when it actually opens the supplied commitment,
+
  * so a partial or divergent history can never yield an incorrect opening — it
  * degrades safely to `null`.
  */
@@ -493,6 +497,22 @@ async function recoverSpendableOpening(
         spendableRandomness = opened.randomness;
         continue;
       }
+      // set_spender(me, _) / revoke_spender(me, _): the contract overwrites the
+      // owner's spendable_commitment with c_spend_new, and both events emit the
+      // owner-facing checkpoint (b_tilde, sigma). SET spendable exactly like
+      // withdraw — without this a bid (set_spender) leaves a fresh client unable
+      // to reproduce the on-chain commitment, so recovery falls back to null.
+      if ((name === "set_spender" || name === "revoke_spender") && topicAddress(event, 1) === account) {
+        const fields = eventFields(event);
+        const opened = openSpendable(
+          fromBytesBE(new Uint8Array(requiredEventField(fields, "b_tilde").bytes())),
+          fromBytesBE(new Uint8Array(requiredEventField(fields, "sigma", "sigma_a").bytes())),
+        );
+        spendableValue = opened.value;
+        spendableRandomness = opened.randomness;
+        continue;
+      }
+
       // transfer(me, _): SET spendable from the event's b_tilde. A self-transfer
       // (to == me too) also credits receiving below, matching the engine's order.
       if (name === "transfer" && topicAddress(event, 1) === account) {
