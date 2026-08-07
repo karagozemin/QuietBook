@@ -124,6 +124,81 @@ function saveLocal(account: string, value: LocalConfidentialState) {
   localStorage.setItem(storageKey(account), JSON.stringify(value));
 }
 
+type ConfidentialKeyBackup = {
+  version: 1;
+  account: string;
+  token: string;
+  iv: string;
+  ciphertext: string;
+};
+
+function bytesToBase64(bytes: Uint8Array) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function base64ToBytes(value: string) {
+  const binary = atob(value);
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
+async function backupCryptoKey(session: WalletSession) {
+  const signature = await deriveConfidentialSeedSignature(session);
+  const digest = await crypto.subtle.digest("SHA-256", signature as unknown as BufferSource);
+  return crypto.subtle.importKey("raw", digest, "AES-GCM", false, ["encrypt", "decrypt"]);
+}
+
+/** Export legacy confidential state without displaying the private scalar. */
+export async function exportConfidentialKeyBackup(session: WalletSession) {
+  const state = loadLocal(session.address);
+  if (!state) throw new Error("This browser has no confidential key to export");
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await backupCryptoKey(session);
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    new TextEncoder().encode(JSON.stringify(state)),
+  );
+  const backup: ConfidentialKeyBackup = {
+    version: 1,
+    account: session.address,
+    token: TOKEN,
+    iv: bytesToBase64(iv),
+    ciphertext: bytesToBase64(new Uint8Array(ciphertext)),
+  };
+  return JSON.stringify(backup, null, 2);
+}
+
+/** Import an encrypted backup created by the same Stellar wallet. */
+export async function importConfidentialKeyBackup(session: WalletSession, encoded: string) {
+  let backup: ConfidentialKeyBackup;
+  try {
+    backup = JSON.parse(encoded) as ConfidentialKeyBackup;
+  } catch {
+    throw new Error("The confidential key backup file is not valid JSON");
+  }
+  if (backup.version !== 1 || backup.account !== session.address || backup.token !== TOKEN) {
+    throw new Error("This backup belongs to a different wallet or confidential token");
+  }
+  try {
+    const key = await backupCryptoKey(session);
+    const plaintext = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: base64ToBytes(backup.iv) },
+      key,
+      base64ToBytes(backup.ciphertext),
+    );
+    const state = JSON.parse(new TextDecoder().decode(plaintext)) as LocalConfidentialState;
+    if (typeof state.secret !== "string" || !/^0x[0-9a-f]{1,64}$/i.test(state.secret)) {
+      throw new Error("The backup does not contain a valid confidential key");
+    }
+    saveLocal(session.address, state);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("valid confidential key")) throw error;
+    throw new Error("This backup could not be opened. Sign with the wallet that created the backup");
+  }
+}
+
 function deploymentAuditorKey() {
   const auditor = testnetEvidence.deployment.auditor.publicKey;
   return pointFromBytes(Uint8Array.from(

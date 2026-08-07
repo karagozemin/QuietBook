@@ -1,10 +1,12 @@
-import { Activity, ArrowLeft, ArrowUpRight, BadgeCheck, Check, Clock3, Fingerprint, Plus, Radio, RefreshCw, ShieldCheck, Timer, Trophy, Users, Wallet } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Activity, ArrowLeft, ArrowUpRight, BadgeCheck, Check, Clock3, Download, Fingerprint, Plus, Radio, RefreshCw, ShieldCheck, Timer, Trophy, Upload, Users, Wallet } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { latestTestnetLedger, type WalletSession } from "./wallet";
 import { compact, explorerTransaction } from "./evidence";
 import {
   createSandboxRound,
+  exportConfidentialKeyBackup,
   hasSandboxDelegation,
+  importConfidentialKeyBackup,
   listSandboxRounds,
   reclaimSandboxBid,
   settleSandboxRound,
@@ -163,6 +165,7 @@ export function LiveSandboxPage({ session, onConnect }: {
   const [showCreate, setShowCreate] = useState(false);
   const [bidWindowMinutes, setBidWindowMinutes] = useState<number>(30);
   const [bid, setBid] = useState("12");
+  const backupInputRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -213,6 +216,35 @@ export function LiveSandboxPage({ session, onConnect }: {
   const expired = Boolean(round && latestLedger !== null && latestLedger > round.bidDeadlineLedger);
   const unlockCountdown = round ? countdown(round.bidDeadlineLedger, latestLedger, ledgerReadAt, now) : "";
   const receipts = useMemo(() => round ? Object.entries(round.receipts).filter(([, hash]) => /^[0-9a-f]{64}$/i.test(hash)) : [], [round]);
+
+  const exportBackup = async () => {
+    if (!session) return onConnect();
+    try {
+      const encoded = await exportConfidentialKeyBackup(session);
+      const blob = new Blob([encoded], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `quietbook-confidential-${session.address.slice(0, 8)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setAction({ status: "success", label: "Encrypted confidential key backup downloaded" });
+    } catch (error) {
+      setAction({ status: "error", label: error instanceof Error ? error.message : "Could not export confidential key" });
+    }
+  };
+
+  const importBackup = async (file: File) => {
+    if (!session) return;
+    try {
+      await importConfidentialKeyBackup(session, await file.text());
+      setAction({ status: "success", label: "Confidential key imported. Retry the bid." });
+    } catch (error) {
+      setAction({ status: "error", label: error instanceof Error ? error.message : "Could not import confidential key" });
+    } finally {
+      if (backupInputRef.current) backupInputRef.current.value = "";
+    }
+  };
 
   const createRound = async () => {
     if (!session) return onConnect();
@@ -350,7 +382,7 @@ export function LiveSandboxPage({ session, onConnect }: {
 
           <div className="live-action-layout">
             <section className="live-primary-action">
-              <div className="live-role-line"><span>{isIssuer ? <ShieldCheck size={17}/> : <Wallet size={17}/>} {isIssuer ? "ISSUER WALLET" : "INVESTOR WALLET"}</span><b>{session ? compact(session.address) : "Not connected"}</b></div>
+              <div className="live-role-line"><span>{isIssuer ? <ShieldCheck size={17}/> : <Wallet size={17}/>} {isIssuer ? "ISSUER WALLET" : "INVESTOR WALLET"}</span><div className="live-role-account"><b>{session ? compact(session.address) : "Not connected"}</b>{session && <span className="live-key-tools"><button type="button" className="icon-pressable" onClick={() => void exportBackup()} aria-label="Export encrypted confidential key backup" title="Export encrypted confidential key backup"><Download size={14}/></button><button type="button" className="icon-pressable" onClick={() => backupInputRef.current?.click()} aria-label="Import encrypted confidential key backup" title="Import encrypted confidential key backup"><Upload size={14}/></button><input ref={backupInputRef} type="file" accept="application/json,.json" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void importBackup(file); }}/></span>}</div></div>
               {action.status === "loading" && createStage && <CreateRoundProgress stage={createStage}/>}
               {bidStage && <BidProgress stage={bidStage} error={action.status === "error" ? action.label : undefined}/>}
               {bidStage && action.status === "error" && <div className="live-progress-actions"><button type="button" className="pressable button-primary" onClick={() => void placeBid()}><RefreshCw size={15}/> Retry bid</button><button type="button" className="pressable button-secondary" onClick={() => { setBidStage(null); setAction({ status: "idle" }); }}>Edit amount</button></div>}

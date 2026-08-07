@@ -497,6 +497,9 @@ code { font-family: "DM Mono", ui-monospace, monospace; }
 .live-role-line { min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); }
 .live-role-line span { display: inline-flex; align-items: center; gap: 7px; color: var(--green-dark); font-size: 10px; font-weight: 800; }
 .live-role-line b { color: var(--muted); font: 500 10px "DM Mono", monospace; }
+.live-role-account { display: inline-flex; align-items: center; gap: 9px; }
+.live-key-tools { display: inline-flex; align-items: center; gap: 4px; }
+.live-key-tools .icon-pressable { width: 27px; height: 27px; }
 .live-primary-action > h2 { margin: 34px 0 0; font-size: 24px; }
 .live-primary-action > p { max-width: 560px; margin: 10px 0 22px; color: var(--muted); font-size: 13px; line-height: 1.6; }
 .bid-field { width: min(370px, 100%); margin: 26px 0 20px; }
