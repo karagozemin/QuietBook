@@ -99,6 +99,12 @@ function TransactionProgress({ stage, steps, title, label, error }: {
         ))}
       </div>
       {error && <div className="live-progress-error"><strong>{steps[activeIndex]?.label ?? "Bid preparation"} could not finish</strong><span>{error}</span></div>}
+      {error?.includes("different key") && <div className="legacy-key-guide">
+        <strong>Legacy wallet recovery</strong>
+        <span>1. Open the browser/origin that first created this confidential account and click the Download icon beside the wallet address.</span>
+        <span>2. Return here, click the Upload icon, and choose the encrypted backup file.</span>
+        <span>3. Retry the bid after import completes.</span>
+      </div>}
     </section>
   );
 }
