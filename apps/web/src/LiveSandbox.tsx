@@ -169,7 +169,7 @@ export function LiveSandboxPage({ session, onConnect }: {
   const [now, setNow] = useState(Date.now());
   const [selectedRoundId, setSelectedRoundId] = useState<string | null>(() => sessionStorage.getItem(SELECTED_ROUND_KEY));
   const [showCreate, setShowCreate] = useState(false);
-  const [bidWindowMinutes, setBidWindowMinutes] = useState<number>(30);
+  const [bidWindowMinutes, setBidWindowMinutes] = useState<number>(2);
   const [bid, setBid] = useState("12");
   const backupInputRef = useRef<HTMLInputElement>(null);
 
