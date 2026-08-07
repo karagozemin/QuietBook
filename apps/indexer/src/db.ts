@@ -231,6 +231,23 @@ export class EvidenceDatabase {
         return { ...event, data: event.dataJson ? JSON.parse(String(event.dataJson)) : null, dataJson: undefined };
       });
   }
+
+  /**
+   * Return raw confidential-token events for authenticated client-side
+   * opening recovery. The server never exposes these through public evidence;
+   * the caller filters them by wallet address before responding.
+   */
+  confidentialEvents(contractId: string) {
+    return this.db
+      .prepare(`
+        SELECT id, ledger, tx_hash AS txHash, raw_xdr AS rawXdr
+        FROM chain_events
+        WHERE contract_id = ?
+        ORDER BY ledger, id
+      `)
+      .all(contractId)
+      .map((row) => row as { id: string; ledger: number; txHash: string; rawXdr: string });
+  }
 }
 
 function parseRound(value: unknown): PublicRound {

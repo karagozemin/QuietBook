@@ -27,3 +27,5 @@ docs/evidence/testnet/*
 !docs/evidence/testnet/negative-tests.json
 .pdf
 QuietBook_PRD_v1.0.pdf
+.vercel
+.env*

@@ -1,12 +1,14 @@
 import { existsSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
+import { scValToNative, xdr } from "@stellar/stellar-sdk";
 import { SandboxAuth } from "./auth.js";
 import {
   allowedOrigins,
   assertProductionConfig,
   authAudience,
   controllerWasmPath,
+  deployment,
   defaultDatabasePath,
   evidenceFiles,
   indexerHost,
@@ -109,6 +111,31 @@ function assertActor(expected: string, actual: string) {
   if (expected !== actual) throw new HttpError(403, "Wallet API session does not match this action");
 }
 
+function confidentialEventsForWallet(account: string) {
+  const result: Array<{ id: string; ledger: number; txHash: string; topic: string[]; value: string }> = [];
+  for (const event of database.confidentialEvents(deployment.contracts.confidentialToken.contractId)) {
+    try {
+      const raw = JSON.parse(event.rawXdr) as { topic?: string[]; value?: string };
+      if (!Array.isArray(raw.topic) || typeof raw.value !== "string") continue;
+      const topics = raw.topic.map((encoded) => xdr.ScVal.fromXDR(encoded, "base64"));
+      const addresses = topics
+        .slice(1)
+        .map((topic) => {
+          try {
+            return String(scValToNative(topic));
+          } catch {
+            return "";
+          }
+        });
+      if (!addresses.includes(account)) continue;
+      result.push({ id: event.id, ledger: event.ledger, txHash: event.txHash, topic: raw.topic, value: raw.value });
+    } catch {
+      // Ignore a corrupt historical row; the RPC fallback can still supply it.
+    }
+  }
+  return result;
+}
+
 function evidenceManifest() {
   return Object.fromEntries(
     evidenceFiles.map((file) => [
@@ -203,6 +230,13 @@ const server = createServer(async (request, response) => {
     }
     if (url.pathname === "/api/rounds") return json(response, 200, { rounds: database.listRounds() }, origin);
     if (url.pathname === "/api/sandbox/rounds") return json(response, 200, { rounds: sandbox.list() }, origin);
+    if (url.pathname === "/api/sandbox/confidential-events") {
+      const wallet = actor(request);
+      const account = url.searchParams.get("account") ?? "";
+      assertActor(account, wallet);
+      consume(mutationLimiter, `events:${wallet}:${clientIp(request)}`);
+      return json(response, 200, { events: confidentialEventsForWallet(wallet) }, origin);
+    }
     if (url.pathname === "/api/evidence/latest") {
       return json(response, 200, { network: "testnet", evidence: evidenceManifest() }, origin);
     }

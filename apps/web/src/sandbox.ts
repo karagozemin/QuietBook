@@ -194,6 +194,20 @@ async function api<T>(path: string, input?: unknown, session?: WalletSession, re
   return result;
 }
 
+async function apiGet<T>(path: string, session: WalletSession, retried = false): Promise<T> {
+  const token = await sandboxApiToken(session, retried);
+  const response = await fetch(`${API}${path}`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  const result = await response.json() as T & { error?: string };
+  if (response.status === 401 && !retried) {
+    sessionStorage.removeItem(apiSessionKey(session.address));
+    return apiGet<T>(path, session, true);
+  }
+  if (!response.ok) throw new Error(result.error ?? `Sandbox request failed (${response.status})`);
+  return result;
+}
+
 export async function listSandboxRounds(): Promise<SandboxRound[]> {
   return (await api<{ rounds: SandboxRound[] }>("/api/sandbox/rounds")).rounds;
 }
@@ -387,23 +401,15 @@ function requiredEventField(fields: Map<string, xdr.ScVal>, ...names: string[]) 
 }
 
 async function recoverReceivingOpening(
-  account: string,
+  session: WalletSession,
   holderKeys: ReturnType<typeof deriveKeys>,
   expectedCommitment: Uint8Array,
 ) {
-  const server = new rpc.Server(testnetEvidence.deployment.rpcUrl);
-  const health = await server.getHealth();
-  let cursor: string | undefined;
+  const account = session.address;
   let value = 0n;
   let randomness = 0n;
 
-  for (;;) {
-    const filters = [{ type: "contract" as const, contractIds: [TOKEN] }];
-    const response = await server.getEvents(cursor
-      ? { filters, cursor, limit: 100 }
-      : { filters, startLedger: Math.max(testnetEvidence.deployment.ledgerRange.start, health.oldestLedger), limit: 100 });
-
-    for (const event of response.events) {
+  for (const event of await historicalTokenEvents(session)) {
       const name = event.topic[0]?.sym().toString();
       if (name === "merge" && topicAddress(event, 1) === account) {
         value = 0n;
@@ -429,12 +435,6 @@ async function recoverReceivingOpening(
       if (!opening) continue;
       value += opening.value;
       randomness = fpAdd(randomness, opening.randomness);
-    }
-
-
-    const previous = cursor;
-    cursor = response.cursor;
-    if (!cursor || cursor === previous || cursorLedger(cursor) >= response.latestLedger) break;
   }
 
   return opensCommitment(expectedCommitment, value, randomness)
@@ -475,13 +475,11 @@ async function recoverReceivingOpening(
  * degrades safely to `null`.
  */
 async function recoverSpendableOpening(
-  account: string,
+  session: WalletSession,
   holderKeys: ReturnType<typeof deriveKeys>,
   expectedCommitment: Uint8Array,
 ) {
-  const server = new rpc.Server(testnetEvidence.deployment.rpcUrl);
-  const health = await server.getHealth();
-  let cursor: string | undefined;
+  const account = session.address;
   let spendableValue = 0n;
   let spendableRandomness = 0n;
   let pendingValue = 0n;
@@ -495,13 +493,7 @@ async function recoverSpendableOpening(
     randomness: deriveSpendR(holderKeys.vk, sigma),
   });
 
-  for (;;) {
-    const filters = [{ type: "contract" as const, contractIds: [TOKEN] }];
-    const response = await server.getEvents(cursor
-      ? { filters, cursor, limit: 100 }
-      : { filters, startLedger: Math.max(testnetEvidence.deployment.ledgerRange.start, health.oldestLedger), limit: 100 });
-
-    for (const event of response.events) {
+  for (const event of await historicalTokenEvents(session)) {
       const name = event.topic[0]?.sym().toString();
       // merge(me): fold the pending receiving opening into spendable.
       if (name === "merge" && topicAddress(event, 1) === account) {
@@ -570,17 +562,62 @@ async function recoverSpendableOpening(
       if (!opening) continue;
       pendingValue += opening.value;
       pendingRandomness = fpAdd(pendingRandomness, opening.randomness);
-    }
-
-
-    const previous = cursor;
-    cursor = response.cursor;
-    if (!cursor || cursor === previous || cursorLedger(cursor) >= response.latestLedger) break;
   }
 
   return opensCommitment(expectedCommitment, spendableValue, spendableRandomness)
     ? { value: spendableValue, randomness: spendableRandomness }
     : null;
+}
+
+type StoredConfidentialEvent = {
+  id: string;
+  ledger: number;
+  txHash: string;
+  topic: string[];
+  value: string;
+};
+
+/**
+ * Merge the durable DigitalOcean event archive with the RPC's newest window.
+ * Horizon/Soroban RPC retention is finite; the indexer is the source of truth
+ * for older confidential ciphertexts, while RPC fills the few seconds before
+ * the next indexer sync. Events are de-duplicated by their stable event id.
+ */
+async function historicalTokenEvents(session: WalletSession): Promise<rpc.Api.EventResponse[]> {
+  const events = new Map<string, rpc.Api.EventResponse>();
+  try {
+    const archived = await apiGet<{ events: StoredConfidentialEvent[] }>(
+      `/api/sandbox/confidential-events?account=${encodeURIComponent(session.address)}`,
+      session,
+    );
+    for (const event of archived.events ?? []) {
+      events.set(event.id, {
+        id: event.id,
+        ledger: event.ledger,
+        txHash: event.txHash,
+        contractId: TOKEN,
+        topic: event.topic.map((encoded) => xdr.ScVal.fromXDR(encoded, "base64")),
+        value: xdr.ScVal.fromXDR(event.value, "base64"),
+      } as unknown as rpc.Api.EventResponse);
+    }
+  } catch {
+    // A temporarily unavailable indexer must not prevent the direct RPC path.
+  }
+
+  const server = new rpc.Server(testnetEvidence.deployment.rpcUrl);
+  const health = await server.getHealth();
+  let cursor: string | undefined;
+  for (;;) {
+    const filters = [{ type: "contract" as const, contractIds: [TOKEN] }];
+    const response = await server.getEvents(cursor
+      ? { filters, cursor, limit: 100 }
+      : { filters, startLedger: Math.max(testnetEvidence.deployment.ledgerRange.start, health.oldestLedger), limit: 100 });
+    for (const event of response.events) events.set(event.id, event);
+    const previous = cursor;
+    cursor = response.cursor;
+    if (!cursor || cursor === previous || cursorLedger(cursor) >= response.latestLedger) break;
+  }
+  return [...events.values()].sort((left, right) => left.ledger - right.ledger || left.id.localeCompare(right.id));
 }
 
 
@@ -697,7 +734,7 @@ export async function submitSandboxBid(
     // or delegation. Rebuild the full opening (value + randomness) from the
     // account's retained Testnet events before giving up.
     const recovered = await recoverSpendableOpening(
-      session.address,
+      session,
       deriveKeys(BigInt(local.secret), addressToField(TOKEN)),
       bidderAccount.spendableCommitment,
     );
@@ -719,7 +756,7 @@ export async function submitSandboxBid(
   let receivingRandomness = 0n;
   if (receivingValue === null) {
     const recovered = await recoverReceivingOpening(
-      session.address,
+      session,
       deriveKeys(BigInt(local.secret), addressToField(TOKEN)),
       bidderAccount.receivingCommitment,
     );

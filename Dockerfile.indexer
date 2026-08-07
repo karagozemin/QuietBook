@@ -44,9 +44,11 @@ COPY . .
 RUN bash scripts/bootstrap-sdk.sh \
   && pnpm install --frozen-lockfile \
   && pnpm build:sdk \
-  && pnpm build:indexer \
+  && rm -rf apps/indexer/dist apps/indexer/tsconfig.tsbuildinfo \
+  && pnpm --filter @quietbook/indexer exec tsc -p tsconfig.json --incremental false \
   && pnpm --filter @quietbook/indexer deploy --legacy --prod /runtime/apps/indexer \
-  && cp -R apps/indexer/dist /runtime/apps/indexer/dist \
+  && rm -rf /runtime/apps/indexer/dist \
+  && cp -a apps/indexer/dist /runtime/apps/indexer/dist \
   && mkdir -p /runtime/docs/evidence/testnet /runtime/packages/sdk/circuits \
   && cp docs/evidence/testnet/*.json /runtime/docs/evidence/testnet/ \
   && cp packages/sdk/circuits/register.json /runtime/packages/sdk/circuits/ \
